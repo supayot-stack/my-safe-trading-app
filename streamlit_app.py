@@ -59,4 +59,59 @@ cols = st.columns(4)
 summary_data = []
 
 # ดึงข้อมูลมาโชว์ 4 ตัวหลัก (ดัชนีและบิทคอยน์)
-main_picks = ["^GSPC", "^SET50.BK", "BTC-USD", "
+main_picks = ["^GSPC", "^SET50.BK", "BTC-USD", "GC=F"]
+for i, ticker in enumerate(main_picks):
+    df = get_data(ticker, itv_map[itv])
+    if df is not None:
+        last = df.iloc[-1]
+        p, r, s = last['Close'], last['RSI'], last['SMA200']
+        
+        # ตัดสินใจสีและคำพูด
+        if p > s and r < 40: status, color = "น่าซื้อ (Buy)", "#26a69a"
+        elif r > 75: status, color = "ขายทำกำไร", "#f57c00"
+        elif p < s: status, color = "อันตราย (Avoid)", "#ef5350"
+        else: status, color = "ถือ/รอชม", "#787b86"
+        
+        with cols[i]:
+            st.markdown(f"""
+                <div class="status-box" style="border-top: 5px solid {color};">
+                    <div style="font-size: 16px; color: #787b86;">{ticker}</div>
+                    <div style="font-size: 28px; font-weight: bold;">{p:,.2f}</div>
+                    <div style="color: {color}; font-weight: bold;">{status}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+st.divider()
+
+# --- 5. กราฟรายตัว (เน้นความชัดเจน) ---
+st.subheader("🔍 วิเคราะห์กราฟละเอียด")
+selected = st.selectbox("เลือกชื่อหุ้น:", all_list)
+
+df_plot = get_data(selected, itv_map[itv])
+if df_plot is not None:
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+    
+    # แท่งเทียนสีมาตรฐาน
+    fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], 
+                                 low=df_plot['Low'], close=df_plot['Close'], name='ราคา'), row=1, col=1)
+    
+    # เส้น SMA 200 สีส้ม (มองเห็นง่ายที่สุดบนแท่งเทียน)
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='เส้นแบ่งแนวโน้ม', 
+                             line=dict(color='#ff9800', width=2)), row=1, col=1)
+    
+    # RSI สีน้ำเงิน
+    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', 
+                             line=dict(color='#2196f3', width=1.5)), row=2, col=1)
+    
+    # เส้นประขอบเขต RSI
+    fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=2, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=2, col=1)
+
+    fig.update_layout(
+        height=600, template="plotly_white", xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.error("ไม่พบข้อมูลหุ้นตัวนี้ หรือข้อมูลไม่เพียงพอสำหรับคำนวณ SMA 200")
