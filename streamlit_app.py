@@ -22,7 +22,6 @@ assets = st.sidebar.multiselect(
     default=["BTC-USD", "GC=F", "NVDA"]
 )
 
-# เมนูหน่วยเวลาตรงตามระยะเวลาย้อนหลัง
 tf = st.sidebar.selectbox(
     "เลือกหน่วยเวลา (Timeframe):", 
     options=["1h", "1d", "1wk"], 
@@ -55,7 +54,8 @@ def fetch_scan_data(tickers, timeframe):
     for ticker in tickers:
         try:
             df = yf.download(ticker, period=period, interval=timeframe, auto_adjust=True)
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            if isinstance(df.columns, pd.MultiIndex): 
+                df.columns = df.columns.get_level_values(0)
             
             if df.empty or len(df) < 200:
                 continue
@@ -75,9 +75,26 @@ def fetch_scan_data(tickers, timeframe):
             else:
                 action = "Wait"
                 
+            # แก้ไขจุดที่ Syntax Error: ปิดปีกกาและวงเล็บให้ครบถ้วน
             results.append({
                 "Ticker": ticker,
                 "Price": f"{float(last['Close']):,.2f}",
                 "Change %": f"{((float(last['Close']) - float(prev['Close'])) / float(prev['Close']) * 100):.2f}%",
                 "RSI": round(float(last['RSI']), 2),
                 "Trend": trend,
+                "Action": action
+            })
+        except Exception as e:
+            continue
+    return pd.DataFrame(results)
+
+# --- 4. ส่วนการแสดงผล (Main UI) ---
+if assets:
+    summary_df = fetch_scan_data(assets, tf)
+    
+    if not summary_df.empty:
+        st.subheader(f"🚀 สรุปสัญญาณด่วน (โหมด {tf})")
+        cols = st.columns(len(summary_df))
+        
+        for i, row in summary_df.iterrows():
+            with cols[i]:
