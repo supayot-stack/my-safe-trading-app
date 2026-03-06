@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 
 # --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Scanner", layout="wide")
-st.title("🛡️ Safe Heaven Scanner (Simple Mode)")
+st.title("🛡️ Safe Heaven Scanner (Fixed Mode)")
 
 # --- 2. แถบเมนูข้าง ---
 st.sidebar.header("⚙️ Settings")
@@ -44,18 +44,15 @@ def fetch_data(tickers):
             last = df.iloc[-1]
             prev = df.iloc[-2]
             
-            trend = "📈 Up" if last['Close'] > last['SMA200'] else "📉 Down"
+            # คำนวณราคาและเปอร์เซ็นต์การเปลี่ยนแปลง
+            last_price = float(last['Close'])
+            prev_price = float(prev['Close'])
+            change_pct = ((last_price - prev_price) / prev_price) * 100
             
-            if last['Close'] > last['SMA200'] and last['RSI'] < 40:
+            trend = "📈 Up" if last_price > float(last['SMA200']) else "📉 Down"
+            
+            if last_price > float(last['SMA200']) and float(last['RSI']) < 40:
                 action = "🟢 BUY"
-            elif last['RSI'] > 75:
+            elif float(last['RSI']) > 75:
                 action = "💰 PROFIT"
-            elif last['Close'] < last['SMA200']:
-                action = "🔴 EXIT"
-            else:
-                action = "Wait"
-                
-            results.append({
-                "Ticker": ticker,
-                "Price": f"{float(last['Close']):,.2f}",
-                "Change %": f"{((float(last['Close']) - float(prev['Close']))
+            elif last_price < float(last['SMA200']):
