@@ -12,7 +12,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Full Pro Version)")
+st.title("🛡️ Safe Heaven Scanner (Standard Version)")
 
 # --- 2. แถบเมนูด้านข้าง (Sidebar) ---
 st.sidebar.header("⚙️ Settings")
@@ -25,7 +25,7 @@ assets = st.sidebar.multiselect(
 tf = st.sidebar.selectbox(
     "เลือกหน่วยเวลา (Timeframe):", 
     options=["1h", "1d", "1wk"], 
-    format_func=lambda x: "รายชั่วโมง (1H) | ย้อนหลัง 1 เดือน" if x=="1h" else ("รายวัน (1D) | ย้อนหลัง 2 ปี" if x=="1d" else "รายสัปดาห์ (1W) | ย้อนหลัง 5 ปี"),
+    format_func=lambda x: "1 ชั่วโมง (1H) | ย้อนหลัง 1 เดือน" if x=="1h" else ("1 วัน (1D) | ย้อนหลัง 2 ปี" if x=="1d" else "1 สัปดาห์ (1W) | ย้อนหลัง 5 ปี"),
     index=1
 )
 
@@ -100,14 +100,11 @@ if assets:
                 bg_color = "#ffffff"
                 text_color = "#212529"
                 if "BUY" in row['Action']:
-                    bg_color = "#28a745"
-                    text_color = "#ffffff"
+                    bg_color = "#28a745"; text_color = "#ffffff"
                 elif "EXIT" in row['Action'] or "AVOID" in row['Action']:
-                    bg_color = "#dc3545"
-                    text_color = "#ffffff"
+                    bg_color = "#dc3545"; text_color = "#ffffff"
                 elif "PROFIT" in row['Action']:
-                    bg_color = "#ffc107"
-                    text_color = "#212529"
+                    bg_color = "#ffc107"; text_color = "#212529"
                 
                 st.markdown(f"""
                     <div style="background-color: {bg_color}; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 10px;">
@@ -133,4 +130,31 @@ if assets:
         st.divider()
         selected = st.selectbox("🔍 วิเคราะห์กราฟแท่งเทียนรายตัว:", assets)
         
-        period_chart = get_optimal_period
+        period_chart = get_optimal_period(tf)
+        df_plot = yf.download(selected, period=period_chart, interval=tf, auto_adjust=True)
+        if isinstance(df_plot.columns, pd.MultiIndex): 
+            df_plot.columns = df_plot.columns.get_level_values(0)
+        
+        df_plot = calculate_indicators(df_plot)
+
+        # สร้างกราฟ 2 ชั้น
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+        
+        fig.add_trace(go.Candlestick(
+            x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], 
+            low=df_plot['Low'], close=df_plot['Close'], name='Price'
+        ), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='orange', width=2)), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='purple', width=1.5)), row=2, col=1)
+        
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        
+        fig.update_layout(height=650, template="plotly_white", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("⚠️ ข้อมูลไม่เพียงพอสำหรับเงื่อนไขนี้ โปรดลองเปลี่ยนหน่วยเวลา")
+else:
+    st.info("👈 เริ่มต้นโดยการเลือกชื่อสินทรัพย์ที่แถบด้านข้าง")
