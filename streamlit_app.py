@@ -4,23 +4,22 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. SETUP & STYLE ---
+# --- 1. การตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
 st.markdown("""<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>""", unsafe_allow_html=True)
 
+# --- 2. ระบบหน่วยความจำ Watchlist ---
 if 'my_watchlist' not in st.session_state:
-    st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA", "AAPL"]
+    st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA"]
 
-# --- 2. ENGINE (SMA 200 & RSI) ---
+# --- 3. ฟังก์ชันดึงข้อมูล (Backbone) ---
 @st.cache_data(ttl=300)
-def fetch_stock_data(ticker, interval):
+def fetch_data(ticker, interval):
     try:
         p = "2y" if interval == "1d" else "60d"
         df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
         if df is None or df.empty or len(df) < 200: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        
-        # Indicator Calculation
         df['SMA200'] = df['Close'].rolling(200).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -29,62 +28,97 @@ def fetch_stock_data(ticker, interval):
         return df
     except: return None
 
-# --- 3. DISPLAY SCANNER ---
-st.title("""🛡️ Safe Heaven Quant Pro""")
-st.sidebar.header("""⚙️ Settings""")
-itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
-itv_label = st.sidebar.selectbox("""เลือกหน่วยเวลา:""", list(itv_map.keys()))
-itv_code = itv_map[itv_label]
+# --- 4. การสร้าง Tabs ---
+tab1, tab2 = st.tabs(["📊 Scanner", "📖 Manual"])
 
-st.subheader(f"""🎯 สแกนสัญญาณเทคนิค ({itv_label})""")
-results = []
-for t in st.session_state.my_watchlist:
-    d = fetch_stock_data(t, itv_code)
-    if d is not None:
-        l = d.iloc[-1]
-        p, r, s = l['Close'], l['RSI'], l['SMA200']
-        # บรรทัด Logic ที่คุณสั่งให้บันทึก
-        sig = "🟢 BUY" if p > s and r < 40 else "🔴 EXIT" if p < s else "WAIT"
-        results.append({"หุ้น": t, "ราคา": f"{p:,.2f}", "RSI": round(r,1), "สัญญาณ": sig})
+with tab2:
+    st.header("""📖 คู่มือการใช้งาน""")
+    st.info("""ระบบจะช่วยสแกนหุ้นจาก List ของคุณ และเปรียบเทียบกับสัญญาณ SMA 200 และ RSI""")
 
-if results:
-    st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+# --- TAB 1: ระบบหลัก ---
+with tab1:
+    st.title("""🛡️ Safe Heaven Quant Scanner""")
 
-# --- 4. TOP 5 & WATCHLIST MANAGEMENT ---
-st.divider()
-with st.expander("""🛠️ จัดการรายชื่อหุ้น (เพิ่มหุ้นแนะนำ / ลบหุ้น)"""):
-    st.write("""💡 **หุ้นยอดนิยม Top 5 (คลิกเพื่อเพิ่ม):**""")
-    top_5 = ["TSLA", "AAPL", "NVDA", "BTC-USD", "^SET.BK"]
-    cols = st.columns(len(top_5))
-    for i, h in enumerate(top_5):
-        if cols[i].button(f"➕ {h}", key=f"t_{h}"):
-            if h not in st.session_state.my_watchlist:
-                st.session_state.my_watchlist.append(h)
-                st.rerun()
+    # --- ส่วนที่เพิ่มใหม่: หุ้นน่าสนใจ (Suggested Stocks) ---
+    st.subheader("""💡 หุ้นและดัชนีที่น่าสนใจ (Quick Add)""")
     
+    suggested = {
+        "Indices": ["^GSPC", "^IXIC", "^SET.BK"], 
+        "Tech Stocks": ["AAPL", "TSLA", "MSFT", "GOOG"],
+        "Crypto": ["ETH-USD", "SOL-USD", "DOGE-USD"]
+    }
+    
+    cols = st.columns(len(suggested))
+    for i, (category, tickers) in enumerate(suggested.items()):
+        with cols[i]:
+            st.write(f"**{category}**")
+            for t in tickers:
+                if st.button(f"➕ {t}", key=f"suggest_{t}"):
+                    if t not in st.session_state.my_watchlist:
+                        st.session_state.my_watchlist.append(t)
+                        st.rerun()
+
     st.divider()
-    c1, c2 = st.columns([3, 1])
-    new_ticker = c1.text_input("""ระบุชื่อหุ้นใหม่:""").upper().strip()
-    if c2.button("""➕ เพิ่มเข้า List"""):
-        if new_ticker and new_ticker not in st.session_state.my_watchlist:
-            st.session_state.my_watchlist.append(new_ticker)
-            st.rerun()
-    
-    for t in st.session_state.my_watchlist:
-        ca, cb = st.columns([5, 1])
-        ca.write(f"🔹 {t}")
-        if cb.button(f"❌", key=f"d_{t}"):
-            st.session_state.my_watchlist.remove(t)
-            st.rerun()
 
-# --- 5. CHARTING ---
-st.divider()
-if st.session_state.my_watchlist:
-    sel = st.selectbox("""🔍 เลือกดูตัวอย่างกราฟ:""", st.session_state.my_watchlist)
-    p_df = fetch_stock_data(sel, itv_code)
-    if p_df is not None:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=p_df.index, open=p_df['Open'], high=p_df['High'], low=p_df['Low'], close=p_df['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=p_df.index, y=p_df['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=p_df.index, y=p_df['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible
+    # --- ส่วนจัดการหุ้นเดิม (Watchlist Management) ---
+    with st.expander("""🛠️ จัดการรายชื่อหุ้น (เพิ่มเอง / ลบหุ้น)"""):
+        col_in, col_add = st.columns([3, 1])
+        with col_in:
+            new_ticker = st.text_input("""ระบุชื่อหุ้นที่ต้องการเพิ่ม (เช่น CPALL.BK):""").upper().strip()
+        with col_add:
+            st.write(""" """)
+            if st.button("""➕ เพิ่มเข้า List"""):
+                if new_ticker and new_ticker not in st.session_state.my_watchlist:
+                    st.session_state.my_watchlist.append(new_ticker)
+                    st.rerun()
+        
+        st.write("""📋 รายการปัจจุบัน""")
+        if st.session_state.my_watchlist:
+            for ticker in st.session_state.my_watchlist:
+                c_name, c_del = st.columns([5, 1])
+                c_name.write(f"🔹 {ticker}")
+                if c_del.button("""❌""", key=f"del_{ticker}"):
+                    st.session_state.my_watchlist.remove(ticker)
+                    st.rerun()
+
+    # Sidebar Settings
+    st.sidebar.header("""Settings""")
+    itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
+    itv_label = st.sidebar.selectbox("""หน่วยเวลา:""", list(itv_map.keys()))
+    itv_code = itv_map[itv_label]
+
+    # --- 5. แสดงตารางสแกนสัญญาณ ---
+    st.subheader(f"""🎯 ผลการสแกนสัญญาณ ({itv_label})""")
+    scan_results = []
+    for t in st.session_state.my_watchlist:
+        d = fetch_data(t, itv_code)
+        if d is not None:
+            last = d.iloc[-1]
+            p, r, s = last['Close'], last['RSI'], last['SMA200']
+            if p > s and r < 40: sig = "🟢 STRONG BUY"
+            elif r > 75: sig = "💰 PROFIT"
+            elif p < s: sig = "🔴 EXIT"
+            else: sig = "WAIT"
+            scan_results.append({"หุ้น": t, "ราคา": f"{p:,.2f}", "RSI": round(r,1), "สัญญาณ": sig})
+    
+    if scan_results:
+        st.dataframe(pd.DataFrame(scan_results), use_container_width=True, hide_index=True)
+    else:
+        st.info("""กรุณาเพิ่มชื่อหุ้น""")
+
+    st.divider()
+    
+    # --- 6. ส่วนแสดงกราฟ ---
+    if st.session_state.my_watchlist:
+        selected = st.selectbox("""🔍 วิเคราะห์กราฟรายตัว:""", st.session_state.my_watchlist)
+        plot_df = fetch_data(selected, itv_code)
+        
+        if plot_df is not None:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+            fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name='Price'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
+            fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
