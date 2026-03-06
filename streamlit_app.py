@@ -22,7 +22,20 @@ def fetch_data(ticker, interval):
             return None
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
+        
+        # --- จุดที่แก้ไข: คำนวณ Indicators ---
         df['SMA200'] = df['Close'].rolling(200).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-
+        # แก้ไขวงเล็บที่ปิดไม่สนิทตรงนี้
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+        
+        return df
+    except: 
+        return None
+
+# --- 4. การสร้าง Tabs ---
+tab1, tab2 = st.tabs(["Scanner", "Manual"])
+
+with tab2:
