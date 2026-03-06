@@ -47,42 +47,10 @@ for t in st.session_state.my_watchlist:
     if d is not None:
         last = d.iloc[-1]
         p, r, s = last['Close'], last['RSI'], last['SMA200']
-        # Logic: ซื้อเมื่อราคา > SMA200 และ RSI < 40
         sig = "🟢 BUY" if p > s and r < 40 else "🔴 EXIT" if p < s else "WAIT"
         results.append({"หุ้น": t, "ราคา": f"{p:,.2f}", "RSI": round(r,1), "สัญญาณ": sig})
 
 if results:
     st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
 
-# --- 5. ระบบจัดการหุ้น (Watchlist) ---
-st.divider()
-with st.expander("""🛠️ จัดการรายชื่อหุ้นใน List"""):
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        new_ticker = st.text_input("""ระบุชื่อหุ้นใหม่ (เช่น PTT.BK):""").upper().strip()
-    with c2:
-        st.write(""" """)
-        if st.button("""➕ เพิ่มหุ้น"""):
-            if new_ticker and new_ticker not in st.session_state.my_watchlist:
-                st.session_state.my_watchlist.append(new_ticker)
-                st.rerun()
-    
-    for t in st.session_state.my_watchlist:
-        col_a, col_b = st.columns([5, 1])
-        col_a.write(f"🔹 {t}")
-        if col_b.button(f"❌", key=f"del_{t}"):
-            st.session_state.my_watchlist.remove(t)
-            st.rerun()
-
-# --- 6. กราฟเทคนิค ---
-st.divider()
-if st.session_state.my_watchlist:
-    selected = st.selectbox("""🔍 เลือกดูตัวอย่างกราฟ:""", st.session_state.my_watchlist)
-    plot_df = fetch_stock_data(selected, itv_code)
-    if plot_df is not None:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
+# --- 5. ระบบจัดการหุ้น และ Top 5 ย
