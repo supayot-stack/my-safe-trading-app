@@ -58,11 +58,4 @@ def fetch_data(tickers):
             # ดึงข้อมูลรายวัน ย้อนหลัง 2 ปี
             df = yf.download(ticker, period="2y", interval="1d", auto_adjust=True)
             if isinstance(df.columns, pd.MultiIndex): 
-                df.columns = df.columns.get_level_values(0)
-            
-            if df.empty or len(df) < 200:
-                continue
-            
-            df = calculate_indicators(df)
-            last = df.iloc[-1]
-            prev = df.iloc[-
+                df.columns = df.columns.get_level_values(
