@@ -25,32 +25,4 @@ def fetch_data(ticker, interval):
         df['SMA200'] = df['Close'].rolling(200).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-        return df
-    except: 
-        return None
-
-# --- 4. การสร้าง Tabs ---
-tab1, tab2 = st.tabs(["Scanner", "Manual"])
-
-with tab2:
-    st.header("""📖 คู่มือการใช้งาน""")
-    st.info("""ระบบใช้ SMA 200 ดูแนวโน้ม และ RSI ดูแรงซื้อขาย""")
-    st.write("""1. ตารางจะแสดงสัญญาณ BUY เมื่อราคาอยู่เหนือเส้น 200 วันและ RSI ต่ำกว่า 40""")
-    st.write("""2. คุณสามารถพิมพ์ชื่อหุ้นใหม่ๆ เพิ่มเข้าไปในรายการได้เอง""")
-
-with tab1:
-    st.title("""🛡️ Safe Heaven Quant Scanner""")
-
-    # --- ส่วนที่ดึงหุ้นเพิ่ม ---
-    with st.expander("""➕ เพิ่มหุ้นตัวอื่นๆ เข้าสู่ระบบสแกน"""):
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            new_ticker = st.text_input("""ระบุชื่อย่อหุ้น (เช่น CPALL.BK, TSLA, ETH-USD):""").upper().strip()
-        with c2:
-            st.write(""" """)
-            if st.button("""เพิ่มหุ้น"""):
-                if new_ticker:
-                    with st.spinner("""กำลังตรวจสอบข้อมูล..."""):
-                        check = fetch_
+        loss = (-
