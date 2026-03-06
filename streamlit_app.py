@@ -18,7 +18,7 @@ def fetch_data(ticker, interval):
     try:
         p = "2y" if interval == "1d" else "60d"
         df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
-        if df.empty or len(df) < 200: 
+        if df is None or df.empty or len(df) < 200: 
             return None
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
@@ -31,5 +31,9 @@ def fetch_data(ticker, interval):
     except: 
         return None
 
-# --- 4. การสร้าง Tabs ---
-tab1, tab2 = st.tabs(["
+# --- 4. การสร้าง Tabs (จุดที่เคย Error: เขียนใหม่ให้ชัวร์) ---
+tab1, tab2 = st.tabs(["Scanner", "Manual"])
+
+with tab2:
+    st.header("📖 วิธีการใช้งาน")
+    st.write("1. ระบบจะส
