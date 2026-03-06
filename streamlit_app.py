@@ -33,14 +33,7 @@ def fetch_data(ticker, interval):
         df['Vol_Avg'] = df['Volume'].rolling(20).mean()
         df['RVOL'] = df['Volume'] / (df['Vol_Avg'] + 1e-9)
         
-        # --- Squeeze Logic (แก้ไขจุด Error ตรงนี้) ---
+        # --- Squeeze Logic (แก้ไขจุด Error ด้วยวิธีใหม่ที่สั้นกว่าเดิม) ---
         df['MA20'] = df['Close'].rolling(20).mean()
         std = df['Close'].rolling(20).std()
-        df['Upper_BB'] = df['MA20'] + (2 * std)
-        df['Lower_BB'] = df['MA20'] - (2 * std)
-        
-        # แยกคำนวณ True Range (TR) ให้สั้นลงเพื่อความปลอดภัย
-        h_l = df['High'] - df['Low']
-        h_pc = abs(df['High'] - df['Close'].shift(1))
-        l_pc = abs(df['Low'] - df['Close'].shift(1))
-        df['TR'] = np.maximum(
+        df['Upper_BB'] = df['MA
