@@ -43,7 +43,7 @@ with tab2:
 with tab1:
     st.title("""🛡️ Safe Heaven Quant Scanner""")
 
-    # --- ส่วนที่เพิ่มเข้ามา: ปุ่มเพิ่มหุ้น (Add Stock) ---
+    # --- ส่วนที่ดึงหุ้นเพิ่ม ---
     with st.expander("""➕ เพิ่มหุ้นตัวอื่นๆ เข้าสู่ระบบสแกน"""):
         c1, c2 = st.columns([3, 1])
         with c1:
@@ -53,8 +53,4 @@ with tab1:
             if st.button("""เพิ่มหุ้น"""):
                 if new_ticker:
                     with st.spinner("""กำลังตรวจสอบข้อมูล..."""):
-                        check = fetch_data(new_ticker, "1d")
-                        if check is not None:
-                            if new_ticker not in st.session_state.my_watchlist:
-                                st.session_state.my_watchlist.append(new_ticker)
-                                st.rerun
+                        check = fetch_
