@@ -20,7 +20,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Fixed & Clear)")
+st.title("🛡️ Safe Heaven Scanner (Fixed Version)")
 
 # --- 2. การตั้งค่าหุ้นและหมวดหมู่ ---
 stock_categories = {
@@ -42,13 +42,4 @@ interval_code = interval_opt[selected_interval]
 # --- 3. ฟังก์ชันคำนวณ ---
 def calculate_indicators(df):
     df['SMA200'] = df['Close'].rolling(window=200).mean()
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / (loss + 1e-9)
-    df['RSI'] = 100 - (100 / (1 + rs))
-    return df
-
-@st.cache_data(ttl=30)
-def fetch_data(tickers, interval):
-    results =
+    delta = df
