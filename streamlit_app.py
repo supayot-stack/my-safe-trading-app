@@ -38,4 +38,6 @@ with tab2:
     with st.container():
         st.markdown('<div class="guide-section">', unsafe_allow_html=True)
         st.subheader("🏗️ 1. ส่วนการนำเข้าข้อมูล (Data Fetching)")
-        st.write("ส่วนนี้เปรียบเสมือน **'ท่อน้ำเลี้ยง'** ของโปรแกรมครับ เราใช้ไลบรารีที่ชื่อ
+        st.write("ส่วนนี้เปรียบเสมือน 'ท่อน้ำเลี้ยง' ของโปรแกรมครับ เราใช้ไลบรารีที่ชื่อว่า yfinance เพื่อดึงข้อมูลราคาหุ้นจาก Yahoo Finance ทั่วโลก")
+        st.markdown("""
+        * **Ticker:** คือชื่อย่อหุ้น (เช่น BTC-USD, PTT.BK)
