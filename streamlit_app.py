@@ -22,24 +22,23 @@ assets = st.sidebar.multiselect(
     default=["BTC-USD", "GC=F", "NVDA"]
 )
 
-# ปรับชื่อเมนูให้ตรงกับระยะเวลาย้อนหลังที่ใช้จริง
+# เมนูหน่วยเวลาตรงตามระยะเวลาย้อนหลัง
 tf = st.sidebar.selectbox(
     "เลือกหน่วยเวลา (Timeframe):", 
     options=["1h", "1d", "1wk"], 
-    format_func=lambda x: "รายชั่วโมง (1H) | ข้อมูลย้อนหลัง 1 เดือน" if x=="1h" else ("รายวัน (1D) | ข้อมูลย้อนหลัง 2 ปี" if x=="1d" else "รายสัปดาห์ (1W) | ข้อมูลย้อนหลัง 5 ปี"),
+    format_func=lambda x: "รายชั่วโมง (1H) | ย้อนหลัง 1 เดือน" if x=="1h" else ("รายวัน (1D) | ย้อนหลัง 2 ปี" if x=="1d" else "รายสัปดาห์ (1W) | ย้อนหลัง 5 ปี"),
     index=1
 )
 
 # --- 3. ฟังก์ชันคำนวณและดึงข้อมูล ---
 def get_optimal_period(timeframe):
-    # ปรับจูนระยะเวลาให้ตรงตามที่แจ้งในเมนู
     if timeframe == "1h": return "1mo" 
     if timeframe == "1d": return "2y"   
     if timeframe == "1wk": return "5y"
     return "2y"
 
 def calculate_indicators(df):
-    # SMA 200 (ใช้ข้อมูล 200 แท่งล่าสุดของหน่วยเวลานั้นๆ)
+    # SMA 200
     df['SMA200'] = df['Close'].rolling(window=200).mean()
     # RSI (14)
     delta = df['Close'].diff()
@@ -55,11 +54,9 @@ def fetch_scan_data(tickers, timeframe):
     period = get_optimal_period(timeframe)
     for ticker in tickers:
         try:
-            # ดึงข้อมูลตามความสัมพันธ์ของ TF และ Period
             df = yf.download(ticker, period=period, interval=timeframe, auto_adjust=True)
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
-            # ตรวจสอบว่ามีข้อมูลเพียงพอ (SMA 200 ต้องใช้ 200 แท่ง)
             if df.empty or len(df) < 200:
                 continue
             
@@ -67,10 +64,8 @@ def fetch_scan_data(tickers, timeframe):
             last = df.iloc[-1]
             prev = df.iloc[-2]
             
-            # ตรรกะวิเคราะห์เทรนด์
             trend = "📈 Up Trend" if last['Close'] > last['SMA200'] else "📉 Down Trend"
             
-            # ระบบให้สัญญาณ
             if trend == "📈 Up Trend" and last['RSI'] < 40:
                 action = "🟢 STRONG BUY"
             elif last['RSI'] > 75:
@@ -86,57 +81,3 @@ def fetch_scan_data(tickers, timeframe):
                 "Change %": f"{((float(last['Close']) - float(prev['Close'])) / float(prev['Close']) * 100):.2f}%",
                 "RSI": round(float(last['RSI']), 2),
                 "Trend": trend,
-                "Action": action
-            })
-        except: continue
-    return pd.DataFrame(results)
-
-# --- 4. ส่วนการแสดงผล (Main UI) ---
-if assets:
-    summary_df = fetch_scan_data(assets, tf)
-    
-    if not summary_df.empty:
-        st.subheader(f"🚀 สรุปสัญญาณด่วน (โหมด {tf})")
-        cols = st.columns(len(summary_df))
-        
-        for i, row in summary_df.iterrows():
-            with cols[i]:
-                # เปลี่ยนสีการ์ดตามสถานะ
-                bg_color = "#ffffff"; text_color = "#212529"
-                if "BUY" in row['Action']:
-                    bg_color = "#28a745"; text_color = "#ffffff"
-                elif "EXIT" in row['Action'] or "AVOID" in row['Action']:
-                    bg_color = "#dc3545"; text_color = "#ffffff"
-                elif "PROFIT" in row['Action']:
-                    bg_color = "#ffc107"; text_color = "#212529"
-                
-                st.markdown(f"""
-                    <div style="background-color: {bg_color}; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 10px;">
-                        <p style="margin:0; font-size:16px; color: {text_color}; opacity: 0.8;">{row['Ticker']}</p>
-                        <h2 style="margin:10px 0; color: {text_color}; font-size:26px; font-weight: bold;">{row['Price']}</h2>
-                        <div style="background-color: rgba(255,255,255,0.2); padding: 5px; border-radius: 8px; color: {text_color}; font-size: 13px; font-weight: bold;">
-                            {row['Action']}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📊 รายละเอียดข้อมูลเชิงลึก")
-        
-        def style_action(val):
-            if 'BUY' in val: return 'background-color: #d4edda'
-            elif 'EXIT' in val or 'AVOID' in val: return 'background-color: #f8d7da'
-            elif 'PROFIT' in val: return 'background-color: #fff3cd'
-            return ''
-
-        st.dataframe(summary_df.style.applymap(style_action, subset=['Action']), use_container_width=True)
-
-        st.divider()
-        selected = st.selectbox("🔍 วิเคราะห์กราฟแท่งเทียนรายตัว:", assets)
-        
-        period_chart = get_optimal_period(tf)
-        df_plot = yf.download(selected, period=period_chart, interval=tf, auto_adjust=True)
-        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
-        df_plot = calculate_indicators(df_plot)
-
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05,
