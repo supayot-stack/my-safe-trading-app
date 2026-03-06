@@ -4,21 +4,21 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. ตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="Safe Heaven Scanner Pro", layout="wide")
-st.title("🛡️ Safe Heaven Scanner (Multi-Timeframe)")
+# --- 1. การตั้งค่าหน้าจอ ---
+st.set_page_config(page_title="Safe Heaven Pro", layout="wide")
+st.title("🛡️ Safe Heaven Scanner (Fixed & Final)")
 
-# --- 2. แถบเมนูข้าง ---
+# --- 2. แถบเมนูด้านข้าง ---
 st.sidebar.header("⚙️ Settings")
 
-# เลือกสินทรัพย์
+# รายชื่อหุ้นและดัชนี
 assets = st.sidebar.multiselect(
     "เลือกสินทรัพย์:", 
-    ["^GSPC", "^SET50.BK", "BTC-USD", "ETH-USD", "GC=F", "NVDA", "AAPL", "TSLA", "MSFT"],
-    default=["^GSPC", "BTC-USD"]
+    ["^GSPC", "^SET50.BK", "BTC-USD", "ETH-USD", "GC=F", "NVDA", "AAPL", "TSLA", "MSFT", "PTT.BK", "AOT.BK"],
+    default=["^GSPC", "BTC-USD", "^SET50.BK"]
 )
 
-# เลือกหน่วยเวลา (Interval)
+# เลือกหน่วยเวลา
 interval_opt = {
     "1 นาที": "1m",
     "5 นาที": "5m",
@@ -44,32 +44,32 @@ def calculate_indicators(df):
 @st.cache_data(ttl=30)
 def fetch_data(tickers, interval):
     results = []
-    # กำหนดระยะเวลาย้อนหลังตาม Interval เพื่อให้มีข้อมูลพอคำนวณ SMA200
-    period = "2y" if interval == "1d" else "60d" 
+    # กำหนดความยาวข้อมูลให้พอสำหรับ SMA200
+    period = "2y" if interval == "1d" else "60d"
     if interval in ["1m", "5m"]: period = "7d"
 
     for ticker in tickers:
         try:
             df = yf.download(ticker, period=period, interval=interval, auto_adjust=True)
-            if isinstance(df.columns, pd.MultiIndex): 
+            if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             
-            if df.empty or len(df) < 200: continue
+            if df.empty or len(df) < 200:
+                continue
             
             df = calculate_indicators(df)
             last = df.iloc[-1]
-            prev = df.iloc[-2]
             
             last_price = float(last['Close'])
-            prev_price = float(prev['Close'])
-            change_pct = ((last_price - prev_price) / prev_price) * 100
+            rsi_val = float(last['RSI'])
+            sma_val = float(last['SMA200'])
             
-            # ตรรกะสัญญาณ
-            if last_price > float(last['SMA200']) and float(last['RSI']) < 40:
+            # ตรรกะสัญญาณแบบเด็ดขาด
+            if last_price > sma_val and rsi_val < 40:
                 action = "🟢 BUY"
-            elif float(last['RSI']) > 75:
+            elif rsi_val > 75:
                 action = "💰 PROFIT"
-            elif last_price < float(last['SMA200']):
+            elif last_price < sma_val:
                 action = "🔴 EXIT"
             else:
                 action = "Wait"
@@ -77,12 +77,61 @@ def fetch_data(tickers, interval):
             results.append({
                 "Ticker": ticker,
                 "Price": f"{last_price:,.2f}",
-                "Change %": f"{change_pct:.2f}%",
-                "RSI": round(float(last['RSI']), 2),
+                "RSI": round(rsi_val, 2),
                 "Action": action
             })
-        except: continue
+        except:
+            continue
     return pd.DataFrame(results)
 
 # --- 4. การแสดงผล ---
-if assets
+if assets:
+    summary_df = fetch_data(assets, interval_code)
+    
+    if not summary_df.empty:
+        st.subheader(f"🚀 สัญญาณล่าสุด ({selected_interval})")
+        
+        # แสดงผล Card
+        cols = st.columns(len(summary_df))
+        for i, row in summary_df.iterrows():
+            with cols[i]:
+                bg = "#ffffff"; txt = "#212529"
+                if "BUY" in row['Action']: bg = "#28a745"; txt = "#ffffff"
+                elif "EXIT" in row['Action']: bg = "#dc3545"; txt = "#ffffff"
+                elif "PROFIT" in row['Action']: bg = "#ffc107"; txt = "#212529"
+                
+                st.markdown(f"""
+                    <div style="background-color: {bg}; padding: 15px; border-radius: 12px; text-align: center; border: 1px solid #ddd; color: {txt};">
+                        <h4 style="margin:0;">{row['Ticker']}</h4>
+                        <h2 style="margin:5px 0;">{row['Price']}</h2>
+                        <div style="font-weight: bold;">{row['Action']}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.divider()
+        selected_stock = st.selectbox("🔍 วิเคราะห์กราฟ:", assets)
+        
+        # ดึงข้อมูลกราฟใหม่
+        df_plot = yf.download(selected_stock, period="60d" if interval_code != "1d" else "2y", interval=interval_code, auto_adjust=True)
+        if isinstance(df_plot.columns, pd.MultiIndex):
+            df_plot.columns = df_plot.columns.get_level_values(0)
+        df_plot = calculate_indicators(df_plot)
+
+        # สร้างกราฟ 2 ชั้น
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+        
+        # ราคา + SMA
+        fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='orange', width=2)), row=1, col=1)
+        
+        # RSI
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='purple', width=1.5)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        
+        fig.update_layout(height=600, template="plotly_white", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("🔄 ข้อมูลกำลังโหลด หรือ Timeframe นี้มีข้อมูลไม่พอสำหรับ SMA 200")
+else:
+    st.info("👈 เลือกหุ้นที่แถบด้านข้างเพื่อเริ่มต้น")
