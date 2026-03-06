@@ -1,11 +1,11 @@
 import streamlit as st
 import yfinance as yf
-import pandas-ta as ta
+import pandas_ta as ta  # แก้จากขีดกลาง (-) เป็นขีดล่าง (_)
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- หน้าตา App ---
+# --- ที่เหลือเหมือนเดิมทุกประการ ---
 st.set_page_config(page_title="Safe Heaven App", layout="wide")
 st.title("🛡️ Safe Heaven Scanner (Private)")
 
