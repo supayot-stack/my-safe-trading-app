@@ -44,15 +44,11 @@ def fetch_data(tickers):
             last = df.iloc[-1]
             prev = df.iloc[-2]
             
-            # คำนวณราคาและเปอร์เซ็นต์การเปลี่ยนแปลง
             last_price = float(last['Close'])
             prev_price = float(prev['Close'])
             change_pct = ((last_price - prev_price) / prev_price) * 100
             
-            trend = "📈 Up" if last_price > float(last['SMA200']) else "📉 Down"
-            
+            # ตรวจสอบการย่อหน้าในบล็อกเงื่อนไข (จุดที่เคย Error)
             if last_price > float(last['SMA200']) and float(last['RSI']) < 40:
                 action = "🟢 BUY"
             elif float(last['RSI']) > 75:
-                action = "💰 PROFIT"
-            elif last_price < float(last['SMA200']):
