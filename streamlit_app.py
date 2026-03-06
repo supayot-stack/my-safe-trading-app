@@ -32,16 +32,4 @@ def fetch_data(ticker, interval):
         df['Vol_Avg'] = df['Volume'].rolling(20).mean()
         df['RVOL'] = df['Volume'] / (df['Vol_Avg'] + 1e-9)
         
-        # Squeeze Logic
-        df['MA20'] = df['Close'].rolling(20).mean()
-        std = df['Close'].rolling(20).std()
-        df['UB'] = df['MA20'] + (2 * std)
-        df['LB'] = df['MA20'] - (2 * std)
-        
-        tr = pd.concat([df['High']-df['Low'], 
-                        (df['High']-df['Close'].shift(1)).abs(), 
-                        (df['Low']-df['Close'].shift(1)).abs()], axis=1).max(axis=1)
-        atr = tr.rolling(20).mean()
-        df['UK'] = df['MA20'] + (1.5 * atr)
-        df['LK'] = df['MA20'] - (1.5 * atr)
-        df['Sqz'] = (df['LB
+        #
