@@ -5,28 +5,44 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. การตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="Safe Heaven Real-time", layout="wide")
+st.set_page_config(page_title="Safe Heaven Scanner Pro", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 10px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Real-time Mode)")
+st.title("🛡️ Safe Heaven Scanner (Pro Mode)")
 
 # --- 2. แถบเมนูด้านข้าง ---
-st.sidebar.header("⚙️ Settings")
-assets = st.sidebar.multiselect(
-    "เลือกสินทรัพย์ที่ต้องการ:", 
-    ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "GC=F", "NVDA", "AAPL", "TSLA", "MSFT"],
-    default=["BTC-USD", "GC=F", "NVDA"]
+st.sidebar.header("🎯 เลือกกลุ่มสินทรัพย์")
+
+preset_options = {
+    "ดัชนีหลัก (Market Index)": ["^GSPC", "^SET50.BK", "GC=F"],
+    "เทคโนโลยี (Tech Giants)": ["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA"],
+    "การเงิน & ธนาคาร (Finance)": ["JPM", "GS", "SCB.BK", "KBANK.BK"],
+    "พลังงาน & ขนส่ง (Energy/Aviation)": ["PTT.BK", "AOT.BK", "XOM"],
+}
+
+selected_presets = st.sidebar.multiselect(
+    "เลือกกลุ่มหุ้น:", 
+    list(preset_options.keys()),
+    default=["ดัชนีหลัก (Market Index)"]
 )
 
-# --- 3. ฟังก์ชันคำนวณและดึงข้อมูล ---
+# รวมรายชื่อหุ้น
+assets_to_scan = []
+for group in selected_presets:
+    assets_to_scan.extend(preset_options[group])
+
+manual_assets = st.sidebar.text_input("เพิ่มชื่อหุ้นเอง (เช่น PTT.BK, TSLA):", "")
+if manual_assets:
+    assets_to_scan.extend([x.strip().upper() for x in manual_assets.split(",")])
+
+# --- 3. ฟังก์ชันคำนวณ ---
 def calculate_indicators(df):
-    # SMA 200 (เส้นแบ่งแนวโน้มหลัก)
     df['SMA200'] = df['Close'].rolling(window=200).mean()
-    # RSI (14)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -35,11 +51,11 @@ def calculate_indicators(df):
     return df
 
 @st.cache_data(ttl=60)
-def fetch_scan_data(tickers):
+def fetch_data(tickers):
     results = []
     for ticker in tickers:
         try:
-            # ดึงข้อมูลรายวันย้อนหลัง 2 ปี เพื่อให้ SMA 200 แม่นยำที่สุด
+            # ดึงข้อมูลรายวัน ย้อนหลัง 2 ปี
             df = yf.download(ticker, period="2y", interval="1d", auto_adjust=True)
             if isinstance(df.columns, pd.MultiIndex): 
                 df.columns = df.columns.get_level_values(0)
@@ -49,100 +65,4 @@ def fetch_scan_data(tickers):
             
             df = calculate_indicators(df)
             last = df.iloc[-1]
-            prev = df.iloc[-2]
-            
-            trend = "📈 Up Trend" if last['Close'] > last['SMA200'] else "📉 Down Trend"
-            
-            if trend == "📈 Up Trend" and last['RSI'] < 40:
-                action = "🟢 STRONG BUY"
-            elif last['RSI'] > 75:
-                action = "💰 TAKE PROFIT"
-            elif trend == "📉 Down Trend":
-                action = "🔴 EXIT/AVOID"
-            else:
-                action = "Wait"
-                
-            results.append({
-                "Ticker": ticker,
-                "Price": f"{float(last['Close']):,.2f}",
-                "Change %": f"{((float(last['Close']) - float(prev['Close'])) / float(prev['Close']) * 100):.2f}%",
-                "RSI": round(float(last['RSI']), 2),
-                "Trend": trend,
-                "Action": action
-            })
-        except:
-            continue
-    return pd.DataFrame(results)
-
-# --- 4. ส่วนการแสดงผล (Main UI) ---
-if assets:
-    summary_df = fetch_scan_data(assets)
-    
-    if not summary_df.empty:
-        st.subheader("🚀 สัญญาณล่าสุด (อัปเดตอัตโนมัติ)")
-        cols = st.columns(len(summary_df))
-        
-        for i, row in summary_df.iterrows():
-            with cols[i]:
-                # ตรวจสอบการย่อหน้าส่วนนี้อย่างละเอียด
-                bg_color = "#ffffff"
-                text_color = "#212529"
-                
-                if "BUY" in row['Action']:
-                    bg_color = "#28a745"
-                    text_color = "#ffffff"
-                elif "EXIT" in row['Action'] or "AVOID" in row['Action']:
-                    bg_color = "#dc3545"
-                    text_color = "#ffffff"
-                elif "PROFIT" in row['Action']:
-                    bg_color = "#ffc107"
-                    text_color = "#212529"
-                
-                st.markdown(f"""
-                    <div style="background-color: {bg_color}; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 10px;">
-                        <p style="margin:0; font-size:16px; color: {text_color}; opacity: 0.9;">{row['Ticker']}</p>
-                        <h2 style="margin:10px 0; color: {text_color}; font-size:26px; font-weight: bold;">{row['Price']}</h2>
-                        <div style="background-color: rgba(255,255,255,0.2); padding: 5px; border-radius: 8px; color: {text_color}; font-size: 13px; font-weight: bold;">
-                            {row['Action']}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📊 รายละเอียดเชิงลึก")
-        
-        def style_action(val):
-            if 'BUY' in val: return 'background-color: #d4edda'
-            elif 'EXIT' in val or 'AVOID' in val: return 'background-color: #f8d7da'
-            elif 'PROFIT' in val: return 'background-color: #fff3cd'
-            return ''
-
-        st.dataframe(summary_df.style.applymap(style_action, subset=['Action']), use_container_width=True)
-
-        st.divider()
-        selected = st.selectbox("🔍 วิเคราะห์กราฟแท่งเทียน:", assets)
-        
-        df_plot = yf.download(selected, period="2y", interval="1d", auto_adjust=True)
-        if isinstance(df_plot.columns, pd.MultiIndex): 
-            df_plot.columns = df_plot.columns.get_level_values(0)
-        df_plot = calculate_indicators(df_plot)
-
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-        
-        fig.add_trace(go.Candlestick(
-            x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], 
-            low=df_plot['Low'], close=df_plot['Close'], name='ราคา'
-        ), row=1, col=1)
-        
-        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='เส้นแนวโน้ม SMA 200', line=dict(color='orange', width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='purple', width=1.5)), row=2, col=1)
-        
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
-        
-        fig.update_layout(height=650, template="plotly_white", xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("⚠️ กำลังดึงข้อมูลล่าสุดจากตลาด... โปรดรอสักครู่")
-else:
-    st.info("👈 เลือกสินทรัพย์ที่ด้านข้างเพื่อเริ่มต้น")
+            prev = df.iloc[-
