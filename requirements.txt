@@ -1,4 +1,4 @@
 yfinance
-pandas_ta
-plotly
 pandas
+plotly
+pandas-ta
