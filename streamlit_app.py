@@ -6,7 +6,6 @@ from plotly.subplots import make_subplots
 
 # --- 1. การตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
-
 st.markdown("<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>", unsafe_allow_html=True)
 
 # --- 2. ระบบหน่วยความจำ Watchlist ---
@@ -16,7 +15,7 @@ if 'my_watchlist' not in st.session_state:
 # --- 3. การสร้าง Tabs ---
 tab1, tab2 = st.tabs(["📊 ระบบสแกนและกราฟ", "📖 คู่มือการทำงานอย่างละเอียด"])
 
-# --- TAB 2: คู่มือ (คงไว้ครบตาม main) ---
+# --- TAB 2: คู่มือ ---
 with tab2:
     st.header("📖 คู่มือการใช้งาน Safe Heaven Scanner")
     st.subheader("🏗️ 1. การนำเข้าข้อมูล")
@@ -35,7 +34,6 @@ with tab1:
 
     # --- ส่วนจัดการหุ้น (Watchlist Management) ---
     with st.expander("🛠️ จัดการรายชื่อหุ้น (เพิ่ม/ลด หุ้นใน Watchlist)"):
-        # ส่วนเพิ่มหุ้น
         col_in, col_add = st.columns([3, 1])
         with col_in:
             new_ticker = st.text_input("ระบุชื่อหุ้นที่ต้องการเพิ่ม (เช่น CPALL.BK, TSLA, BTC-USD):").upper().strip()
@@ -47,11 +45,8 @@ with tab1:
                     st.rerun()
         
         st.divider()
-        
-        # ส่วนลบหุ้น (แบบรายตัว)
         st.write("📋 รายการหุ้นปัจจุบัน (กดปุ่ม ❌ เพื่อลบออก)")
         if st.session_state.my_watchlist:
-            # สร้างแถวสำหรับการลบหุ้น
             for i, ticker in enumerate(st.session_state.my_watchlist):
                 col_name, col_del = st.columns([5, 1])
                 col_name.write(f"🔹 {ticker}")
