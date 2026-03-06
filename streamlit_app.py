@@ -9,11 +9,10 @@ st.set_page_config(page_title="Safe Heaven Pro", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    .stMetric { border: 1px solid #dee2e6; padding: 10px; border-radius: 10px; background-color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Pro v2.0)")
+st.title("🛡️ Safe Heaven Scanner (Full Pro Version)")
 
 # --- 2. แถบเมนูด้านข้าง (Sidebar) ---
 st.sidebar.header("⚙️ Settings")
@@ -64,6 +63,7 @@ def fetch_scan_data(tickers, timeframe):
             
             trend = "📈 Up Trend" if last['Close'] > last['SMA200'] else "📉 Down Trend"
             
+            # ตรรกะการให้สัญญาณ
             if trend == "📈 Up Trend" and last['RSI'] < 40:
                 action = "🟢 STRONG BUY"
             elif last['RSI'] > 75:
@@ -89,18 +89,65 @@ if assets:
     summary_df = fetch_scan_data(assets, tf)
     
     if not summary_df.empty:
+        # --- ส่วนการ์ดสีราคา ---
+        st.subheader("🚀 สรุปสัญญาณด่วน")
         cols = st.columns(len(summary_df))
+        
         for i, row in summary_df.iterrows():
             with cols[i]:
-                st.metric(row['Ticker'], row['Price'], row['Change %'])
+                # เลือกสีตามจังหวะเทรด
+                bg_color = "#ffffff" 
+                text_color = "#212529"
+                if "BUY" in row['Action']:
+                    bg_color = "#28a745" # เขียว
+                    text_color = "#ffffff"
+                elif "EXIT" in row['Action'] or "AVOID" in row['Action']:
+                    bg_color = "#dc3545" # แดง
+                    text_color = "#ffffff"
+                elif "PROFIT" in row['Action']:
+                    bg_color = "#ffc107" # เหลือง
+                    text_color = "#212529"
+                
+                st.markdown(f"""
+                    <div style="background-color: {bg_color}; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                        <p style="margin:0; font-size:16px; color: {text_color}; opacity: 0.9;">{row['Ticker']}</p>
+                        <h2 style="margin:10px 0; color: {text_color}; font-size:28px; font-weight: bold;">{row['Price']}</h2>
+                        <div style="background-color: rgba(255,255,255,0.2); padding: 5px; border-radius: 8px; color: {text_color}; font-size: 14px; font-weight: bold;">
+                            {row['Action']}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-        st.subheader("📊 ตารางสรุปสัญญาณปัจจุบัน")
+        # --- ตารางรายละเอียด ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("📊 รายละเอียดข้อมูลเชิงลึก")
         
         def style_action(val):
-            color = 'white'
-            if 'BUY' in val: color = '#d4edda'
-            elif 'EXIT' in val: color = '#f8d7da'
-            elif 'PROFIT' in val: color = '#fff3cd'
-            return f'background-color: {color}'
+            if 'BUY' in val: return 'background-color: #d4edda'
+            elif 'EXIT' in val or 'AVOID' in val: return 'background-color: #f8d7da'
+            elif 'PROFIT' in val: return 'background-color: #fff3cd'
+            return ''
 
         st.dataframe(summary_df.style.applymap(style_action, subset=['Action']), use_container_width=True)
+
+        # --- กราฟเจาะลึก ---
+        st.divider()
+        selected = st.selectbox("🔍 เลือกดูรายละเอียดกราฟ:", assets)
+        
+        period_chart = get_optimal_period(tf)
+        df_plot = yf.download(selected, period=period_chart, interval=tf, auto_adjust=True)
+        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
+        df_plot = calculate_indicators(df_plot)
+
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+        fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='orange', width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='purple', width=1.5)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        fig.update_layout(height=650, template="plotly_white", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("รอข้อมูลจากตลาดสักครู่ หรือลองเปลี่ยน Timeframe ครับ")
+else:
+    st.info("👈 เลือกสินทรัพย์ที่เมนูด้านข้างเพื่อเริ่มสแกน")
