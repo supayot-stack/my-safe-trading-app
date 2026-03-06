@@ -4,38 +4,53 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. การตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
-st.markdown("""<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>""", unsafe_allow_html=True)
+# --- 1. Config ---
+st.set_page_config(page_title="Safe Heaven", layout="wide")
 
-# --- 2. ระบบหน่วยความจำ Watchlist ---
-if 'my_watchlist' not in st.session_state:
-    st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA", "AAPL"]
+if 'list' not in st.session_state:
+    st.session_state.list = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA"]
 
-# --- 3. ฟังก์ชันดึงข้อมูลและคำนวณ Indicator ---
+# --- 2. Engine ---
 @st.cache_data(ttl=300)
-def fetch_stock_data(ticker, interval):
-    try:
-        p = "2y" if interval == "1d" else "60d"
-        df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
-        if df is None or df.empty or len(df) < 200: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        
-        # คำนวณ SMA 200
-        df['SMA200'] = df['Close'].rolling(200).mean()
-        
-        # คำนวณ RSI
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-        return df
-    except:
-        return None
+def get_data(symbol, itv):
+    p = "2y" if itv == "1d" else "60d"
+    df = yf.download(symbol, period=p, interval=itv, 
+                     auto_adjust=True, progress=False)
+    if df is None or df.empty or len(df) < 200: return None
+    if isinstance(df.columns, pd.MultiIndex): 
+        df.columns = df.columns.get_level_values(0)
+    
+    # Indicators
+    df['MA'] = df['Close'].rolling(200).mean()
+    diff = df['Close'].diff()
+    g = diff.where(diff > 0, 0).rolling(14).mean()
+    l = -diff.where(diff < 0, 0).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (g / (l + 1e-9))))
+    return df
 
-# --- 4. ส่วนแสดงผลหลัก ---
-st.title("""🛡️ Safe Heaven Quant Pro""")
+# --- 3. Sidebar (แก้จุดที่ Error) ---
+st.sidebar.header("Settings")
+# แยก Dict ออกมาไม่ให้บรรทัดยาวเกินไป
+m = {"Day": "1d", "1 Hour": "1h", "5 Min": "5m"}
+itv_lab = st.sidebar.selectbox("Timeframe", list(m.keys()))
+itv = m[itv_lab]
 
-# Sidebar สำหรับตั้งค่าหน่วยเวลา
-st.sidebar.header("""⚙️ Settings""")
-itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "
+# --- 4. Table ---
+st.title("🛡️ Safe Heaven Quant Pro")
+res = []
+for s in st.session_state.list:
+    d = get_data(s, itv)
+    if d is not None:
+        last = d.iloc[-1]
+        p, r, ma = last['Close'], last['RSI'], last['MA']
+        # Signal
+        if p > ma and r < 40: sig = "🟢 BUY"
+        elif p < ma: sig = "🔴 EXIT"
+        else: sig = "WAIT"
+        res.append({"Stock": s, "Price": f"{p:,.2f}", 
+                    "RSI": round(r,1), "Signal": sig})
+
+if res:
+    st.dataframe(pd.DataFrame(res), use_container_width=True)
+
+# --- 5
