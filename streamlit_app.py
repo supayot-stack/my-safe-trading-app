@@ -4,96 +4,69 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. การตั้งค่าหน้าจอ ---
+# --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
-    .guide-section { background-color: #1e222d; padding: 25px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #30363d; }
-    h2, h3 { color: #58a6ff; }
+    .guide-box { background-color: #1e222d; padding: 20px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. การสร้าง Tabs ---
-tab1, tab2 = st.tabs(["📊 ระบบสแกนและกราฟ", "📖 คู่มือการทำงานของระบบ"])
+# --- 2. ส่วนเมนู (Tabs) ---
+tab1, tab2 = st.tabs(["📊 ระบบสแกนและกราฟ", "📖 คู่มือการใช้งานสำหรับมือใหม่"])
 
 with tab2:
-    st.header("📖 เจาะลึกการทำงานของ Safe Heaven Scanner")
+    st.header("📖 คู่มือการใช้งาน Safe Heaven Scanner")
     
-    # ส่วนที่ 1: การนำเข้าข้อมูล
-    with st.container():
-        st.markdown('<div class="guide-section">', unsafe_allow_html=True)
-        st.subheader("🏗️ 1. ส่วนการนำเข้าข้อมูล (Data Fetching)")
-        st.write("ส่วนนี้เปรียบเสมือน **'ท่อน้ำเลี้ยง'** ของโปรแกรมครับ เราใช้ไลบรารีที่ชื่อว่า `yfinance` เพื่อดึงข้อมูลราคาหุ้นจาก Yahoo Finance ทั่วโลก")
-        st.markdown("""
-        * **Ticker:** คือชื่อย่อหุ้น (เช่น BTC-USD, PTT.BK)
-        * **Period & Interval:** โปรแกรมจะสั่งให้ไปดึงข้อมูลย้อนหลัง 2 ปี (2y) เพื่อให้มีข้อมูลเพียงพอสำหรับการคำนวณเส้นค่าเฉลี่ย 200 วัน
-        * **Auto Adjust:** เราสั่งให้ปรับราคา (Adjusted Close) อัตโนมัติ เพื่อให้ราคาที่ได้มาสะท้อนมูลค่าจริงหลังการปันผลหรือแตกหุ้นแล้ว
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("""
+    ### 🛡️ กลยุทธ์นี้คืออะไร?
+    กลยุทธ์นี้เน้นการ **"ซื้อเมื่อย่อในขาขึ้น"** และ **"หนีเมื่อเป็นขาลง"** โดยใช้เครื่องมือหลัก 2 ตัว:
+    
+    1. **เส้น SMA 200 (แนวโน้มระยะยาว):** * ถ้าราคา **อยู่เหนือ** เส้นนี้ = ขาขึ้น (ปลอดภัยที่จะเล่น)
+        * ถ้าราคา **อยู่ใต้** เส้นนี้ = ขาลง (อันตราย ห้ามถือ)
+    
+    2. **RSI 14 (แรงแกว่ง):** * ใช้ดูว่าหุ้น "ถูก" หรือ "แพง" เกินไปในขณะนั้น
+    """)
 
-    # ส่วนที่ 2: สมองกล
-    with st.container():
-        st.markdown('<div class="guide-section">', unsafe_allow_html=True)
-        st.subheader("🧬 2. ส่วนสมองกล (Indicators Calculation)")
-        st.write("เมื่อได้ตัวเลขราคาดิบๆ มาแล้ว โปรแกรมจะนำมาเข้าสูตรทางคณิตศาสตร์ 2 สูตรที่เรากำหนดไว้:")
-        st.markdown("""
-        * **SMA 200 (Simple Moving Average):** คือการเอาราคาปิดย้อนหลัง 200 วันมาบวกกันแล้วหาร 200 เพื่อดู **"แนวโน้มระยะยาว"**
-        * **RSI (Relative Strength Index):** เป็นสูตรวัด **"แรงแกว่ง"** ของราคา โดยเทียบแรงซื้อกับแรงขายในรอบ 14 วัน (14 แท่งเทียน) เพื่อดูว่าหุ้นตอนนี้ **"ถูกเกินไป"** หรือ **"แพงเกินไป"**
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
+    
 
-    # ส่วนที่ 3: ตรรกะการตัดสินใจ (Trading Logic) - อัปเดตตามที่คุณต้องการ
-    with st.container():
-        st.markdown('<div class="guide-section">', unsafe_allow_html=True)
-        st.subheader("🎯 3. ส่วนตรรกะการตัดสินใจ (Trading Logic)")
-        st.write("นี่คือหัวใจของกลยุทธ์ **Safe Heaven** ที่เราเขียนไว้ ซึ่งโปรแกรมจะอ่านค่าและตัดสินใจตามเงื่อนไข (If-Else) ดังนี้:")
-        
-        st.markdown("""
-        | เงื่อนไข (Condition) | คำแนะนำ (Action) | ความหมาย |
-        | :--- | :--- | :--- |
-        | **ราคา > SMA 200** และ **RSI < 40** | 🟢 **STRONG BUY** | หุ้นเป็นขาขึ้น แต่เพิ่งย่อตัวลงมาจน **"ถูก"** |
-        | **RSI > 75** | 💰 **PROFIT** | ราคาขึ้นมาแรงเกินไปแล้ว (Overbought) **ควรขาย** |
-        | **ราคา < SMA 200** | 🔴 **EXIT/AVOID** | หุ้นหลุดแนวโน้มขาขึ้น กลายเป็นขาลง **ห้ามถือ** |
-        | อื่นๆ | **WAIT** | รอจังหวะที่เหมาะสม **ยังไม่มีสัญญาณ** |
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ส่วนที่ 4: การแสดงผล
-    with st.container():
-        st.markdown('<div class="guide-section">', unsafe_allow_html=True)
-        st.subheader("🎨 4. ส่วนการแสดงผล (Frontend/UI)")
-        st.write("เราใช้ Streamlit และ Plotly ในการวาดภาพออกมาให้คุณเห็น:")
-        st.markdown("""
-        * **Streamlit (Layout):** จัดวางกล่องข้อมูล (Metric Cards) และตัวเลือก (Sidebar) ให้ดูง่าย
-        * **Plotly (Interactive Graph):** วาดแท่งเทียนสีเขียว-แดง และเส้น Indicator ต่างๆ แบบที่คุณสามารถซูมเข้า-ออก หรือเอาเมาส์ไปชี้เพื่อดูราคาในแต่ละวันได้
-        * **CSS Style:** เราใส่คำสั่งตกแต่งเพื่อให้พื้นหลังเป็น Dark Mode และเปลี่ยนสีปุ่มให้โดดเด่นเหมือนแอปเทรดมืออาชีพ
-        """)
-        st.info("💡 **สรุปภาพรวม:** โปรแกรมจะทำงานเป็นวงจรคือ: **ดึงข้อมูล (Fetch) ➡️ คำนวณ (Calc) ➡️ ตัดสินใจ (Logic) ➡️ วาดรูป (Show)** วนไปเรื่อยๆ ทุกครั้งที่คุณกด Refresh หรือเปลี่ยนชื่อหุ้นครับ")
-        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("""
+    ---
+    ### 🚦 วิธีอ่านสัญญาณ (Trading Signals)
+    * 🟢 **STRONG BUY:** ราคาอยู่เหนือเส้น SMA 200 (ขาขึ้นชัดเจน) แต่ RSI ต่ำกว่า 40 (ราคาเพิ่งย่อตัวลงมา เป็นจุดซื้อที่ได้เปรียบ)
+    * 💰 **TAKE PROFIT:** RSI สูงกว่า 75 แปลว่าราคาขึ้นแรงเกินไปแล้ว มีโอกาสย่อตัวสูง ควรพิจารณาขายทำกำไร
+    * 🔴 **EXIT/AVOID:** ราคาหลุดเส้น SMA 200 ลงมา แปลว่าเปลี่ยนเป็นขาลงแล้ว ให้ขายออกทันทีเพื่อรักษาเงินต้น
+    * ⚪ **WAIT:** สัญญาณยังไม่ชัดเจน ให้ถือเงินสดรอไปก่อน
+    
+    ---
+    ### ⚙️ การตั้งค่าหน่วยเวลา (Timeframe)
+    * **1 วัน (1d):** สำหรับนักลงทุนระยะกลาง-ยาว (ถือหลักสัปดาห์/เดือน) แม่นยำที่สุด
+    * **1 ชั่วโมง / 5 นาที:** สำหรับนักเก็งกำไรระยะสั้น (Day Trade) สัญญาณจะมาไวแต่มีความเสี่ยงผันผวนสูง
+    """)
 
 with tab1:
     st.title("🛡️ Safe Heaven Quant Scanner")
     
-    # รายชื่อหุ้นที่ต้องการดึง
+    # (ส่วนโค้ดการทำงานเดิมที่คุณชอบ)
     stock_categories = {
-        "🌍 Global Indices": ["^GSPC", "^SET50.BK", "GC=F"],
-        "💻 Tech Giants": ["NVDA", "AAPL", "TSLA", "MSFT"],
+        "🌍 Indices": ["^GSPC", "^SET50.BK", "GC=F"],
+        "💻 Tech": ["NVDA", "AAPL", "TSLA", "MSFT"],
         "₿ Crypto": ["BTC-USD", "ETH-USD"],
-        "🇹🇭 Thai Stocks": ["PTT.BK", "AOT.BK", "SCB.BK", "KBANK.BK"]
+        "🇹🇭 Thai": ["PTT.BK", "AOT.BK", "KBANK.BK"]
     }
-    all_list = [s for cat in stock_categories.values() for s in cat]
+    
+    all_assets = [s for cat in stock_categories.values() for s in cat]
     
     st.sidebar.header("⏱️ Settings")
     itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
-    itv_label = st.sidebar.selectbox("เลือกหน่วยเวลา:", list(itv_map.keys()), index=0)
-    itv_code = itv_map[itv_label]
+    itv = st.sidebar.selectbox("หน่วยเวลา:", list(itv_map.keys()), index=0)
     
-    def fetch_quant_data(ticker, interval):
+    # ฟังก์ชันคำนวณและดึงข้อมูล
+    def get_data(ticker, interval):
         try:
-            p = "2y" if interval == "1d" else "60d"
-            df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
+            df = yf.download(ticker, period="2y" if interval=="1d" else "60d", interval=interval, auto_adjust=True, progress=False)
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             if len(df) < 200: return None
             df['SMA200'] = df['Close'].rolling(200).mean()
@@ -104,35 +77,34 @@ with tab1:
             return df
         except: return None
 
-    # แสดงผลตารางสแกน
-    st.subheader(f"🎯 ตารางสแกนปัจจุบัน ({itv_label})")
+    # สแกนหาตัวที่มีสัญญาณ
     results = []
-    for t in all_list:
-        data = fetch_quant_data(t, itv_code)
-        if data is not None:
-            l = data.iloc[-1]
-            p, r, s = l['Close'], l['RSI'], l['SMA200']
-            if p > s and r < 40: sig = "🟢 STRONG BUY"
-            elif r > 75: sig = "💰 PROFIT"
-            elif p < s: sig = "🔴 EXIT"
-            else: sig = "WAIT"
-            results.append({"หุ้น": t, "ราคาล่าสุด": f"{p:,.2f}", "RSI": round(r,1), "สัญญาณ": sig})
+    for t in all_assets:
+        df = get_data(t, itv_map[itv])
+        if df is not None:
+            last = df.iloc[-1]
+            p, r, s = last['Close'], last['RSI'], last['SMA200']
+            if p > s and r < 40: act, col = "STRONG BUY", "#00ffbb"
+            elif r > 75: act, col = "PROFIT", "#ffcc00"
+            elif p < s: act, col = "EXIT", "#ff3366"
+            else: act, col = "Wait", "#787b86"
+            results.append({"Ticker": t, "Price": f"{p:,.2f}", "RSI": round(r,1), "Signal": act, "Color": col})
     
     if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
-    
-    st.divider()
-    
-    # กราฟเทคนิค
-    selected_asset = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟละเอียด:", all_list)
-    plot_df = fetch_quant_data(selected_asset, itv_code)
-    
-    if plot_df is not None:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=plot_df.index, open=plot_df['Open'], high=plot_df['High'], low=plot_df['Low'], close=plot_df['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
-        fig.update_layout(height=650, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        res_df = pd.DataFrame(results)
+        st.subheader(f"🎯 รายการสแกนปัจจุบัน ({itv})")
+        st.dataframe(res_df.drop(columns=['Color']), use_container_width=True, hide_index=True)
+        
+        st.divider()
+        selected = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟ:", all_assets)
+        df_plot = get_data(selected, itv_map[itv])
+        
+        if df_plot is not None:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+            fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
+            fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
