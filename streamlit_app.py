@@ -12,7 +12,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Pro Version)")
+st.title("🛡️ Safe Heaven Scanner (Full Pro Version)")
 
 # --- 2. แถบเมนูด้านข้าง (Sidebar) ---
 st.sidebar.header("⚙️ Settings")
@@ -75,7 +75,6 @@ def fetch_scan_data(tickers, timeframe):
             else:
                 action = "Wait"
                 
-            # แก้ไขจุดที่ Syntax Error: ปิดปีกกาและวงเล็บให้ครบถ้วน
             results.append({
                 "Ticker": ticker,
                 "Price": f"{float(last['Close']):,.2f}",
@@ -84,7 +83,7 @@ def fetch_scan_data(tickers, timeframe):
                 "Trend": trend,
                 "Action": action
             })
-        except Exception as e:
+        except:
             continue
     return pd.DataFrame(results)
 
@@ -98,3 +97,40 @@ if assets:
         
         for i, row in summary_df.iterrows():
             with cols[i]:
+                bg_color = "#ffffff"
+                text_color = "#212529"
+                if "BUY" in row['Action']:
+                    bg_color = "#28a745"
+                    text_color = "#ffffff"
+                elif "EXIT" in row['Action'] or "AVOID" in row['Action']:
+                    bg_color = "#dc3545"
+                    text_color = "#ffffff"
+                elif "PROFIT" in row['Action']:
+                    bg_color = "#ffc107"
+                    text_color = "#212529"
+                
+                st.markdown(f"""
+                    <div style="background-color: {bg_color}; padding: 20px; border-radius: 15px; text-align: center; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                        <p style="margin:0; font-size:16px; color: {text_color}; opacity: 0.9;">{row['Ticker']}</p>
+                        <h2 style="margin:10px 0; color: {text_color}; font-size:26px; font-weight: bold;">{row['Price']}</h2>
+                        <div style="background-color: rgba(255,255,255,0.2); padding: 5px; border-radius: 8px; color: {text_color}; font-size: 13px; font-weight: bold;">
+                            {row['Action']}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("📊 รายละเอียดข้อมูลเชิงลึก")
+        
+        def style_action(val):
+            if 'BUY' in val: return 'background-color: #d4edda'
+            elif 'EXIT' in val or 'AVOID' in val: return 'background-color: #f8d7da'
+            elif 'PROFIT' in val: return 'background-color: #fff3cd'
+            return ''
+
+        st.dataframe(summary_df.style.applymap(style_action, subset=['Action']), use_container_width=True)
+
+        st.divider()
+        selected = st.selectbox("🔍 วิเคราะห์กราฟแท่งเทียนรายตัว:", assets)
+        
+        period_chart = get_optimal_period
