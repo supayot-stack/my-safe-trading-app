@@ -5,41 +5,58 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. การตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="Safe Heaven ClearView", layout="wide")
+st.set_page_config(page_title="Safe Heaven Classic", layout="wide")
 
+# CSS: เน้นตัวเลขใหญ่ๆ และพื้นหลังสะอาด
 st.markdown("""
     <style>
     .stApp { background-color: #ffffff; }
-    .metric-card {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        padding: 15px;
+    h1 { color: #1e222d; font-family: sans-serif; }
+    .status-box {
+        padding: 20px;
         border-radius: 10px;
         text-align: center;
+        border: 1px solid #dee2e6;
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛡️ Safe Heaven Scanner (Fixed Version)")
+st.title("🛡️ Safe Heaven Scanner")
 
-# --- 2. การตั้งค่าหุ้นและหมวดหมู่ ---
-stock_categories = {
-    "🌍 Market Indices": ["^GSPC", "^SET50.BK", "GC=F"],
-    "💻 Technology": ["NVDA", "AAPL", "MSFT", "GOOGL", "TSLA"],
-    "🇹🇭 Thai & Finance": ["SCB.BK", "KBANK.BK", "PTT.BK", "AOT.BK"],
+# --- 2. ตั้งค่าหุ้น (จัดกลุ่มแบบเรียบง่าย) ---
+assets = {
+    "🇺🇸 USA/Global": ["^GSPC", "GC=F", "NVDA", "AAPL", "TSLA", "MSFT"],
+    "🇹🇭 Thai Market": ["^SET50.BK", "PTT.BK", "AOT.BK", "SCB.BK", "KBANK.BK"],
     "₿ Crypto": ["BTC-USD", "ETH-USD"]
 }
 
-all_assets = []
-for stocks in stock_categories.values():
-    all_assets.extend(stocks)
+# รวมหุ้นทั้งหมด
+all_list = []
+for v in assets.values(): all_list.extend(v)
 
-st.sidebar.header("⏱️ Timeframe")
-interval_opt = {"1 นาที": "1m", "5 นาที": "5m", "1 ชั่วโมง": "1h", "1 วัน": "1d"}
-selected_interval = st.sidebar.selectbox("เลือกหน่วยเวลา:", list(interval_opt.keys()), index=3)
-interval_code = interval_opt[selected_interval]
+st.sidebar.header("⏱️ เลือกหน่วยเวลา")
+itv = st.sidebar.selectbox("หน่วยเวลา:", ["1 วัน", "1 ชั่วโมง", "5 นาที"], index=0)
+itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
 
 # --- 3. ฟังก์ชันคำนวณ ---
-def calculate_indicators(df):
-    df['SMA200'] = df['Close'].rolling(window=200).mean()
-    delta = df
+def get_data(ticker, interval):
+    period = "2y" if interval == "1d" else "60d"
+    df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+    if df.empty or len(df) < 200: return None
+    
+    # SMA 200 & RSI 14
+    df['SMA200'] = df['Close'].rolling(200).mean()
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+    return df
+
+# --- 4. แสดงผล Dashboard ---
+st.subheader(f"📈 สรุปสัญญาณล่าสุด ({itv})")
+cols = st.columns(4)
+summary_data = []
+
+# ดึงข้อมูลมาโชว์ 4 ตัวหลัก (ดัชนีและบิทคอยน์)
+main_picks = ["^GSPC", "^SET50.BK", "BTC-USD", "
