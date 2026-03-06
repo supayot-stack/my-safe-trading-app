@@ -4,35 +4,34 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. Setup ---
-st.set_page_config(page_title="Safe Heaven", layout="wide")
+# --- 1. การตั้งค่าหน้าจอ ---
+st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
 st.markdown("""<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>""", unsafe_allow_html=True)
 
+# --- 2. ระบบหน่วยความจำ Watchlist ---
 if 'my_watchlist' not in st.session_state:
-    st.session_state.my_watchlist = ["PTT.BK", "BTC-USD", "NVDA", "AAPL"]
+    st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA", "AAPL"]
 
-# --- 2. Data Engine ---
+# --- 3. ฟังก์ชันดึงข้อมูลและคำนวณ Indicator ---
 @st.cache_data(ttl=300)
-def fetch_data(ticker, interval):
-    p = "2y" if interval == "1d" else "60d"
-    df = yf.download(ticker, period=p, interval=interval, 
-                     auto_adjust=True, progress=False)
-    
-    if df is None or df.empty or len(df) < 200:
-        return None
+def fetch_stock_data(ticker, interval):
+    try:
+        p = "2y" if interval == "1d" else "60d"
+        df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
+        if df is None or df.empty or len(df) < 200: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    
-    df['SMA'] = df['Close'].rolling(200).mean()
-    diff = df['Close'].diff()
-    g = (diff.where(diff > 0, 0)).rolling(14).mean()
-    l = (-diff.where(diff < 0, 0)).rolling(14).mean()
-    df['RSI'] = 100 - (100 / (1 + (g / (l + 1e-9))))
-    
-    v_avg = df['Volume'].rolling(20).mean()
-    df['RVOL'] = df['Volume'] / (v_avg + 1e-9)
-    
-    m20 = df['Close'].rolling(20).mean()
-    std = df['Close'].rolling(20).std()
-    df['UB'] = m20 + (2 * std)
+        # คำนวณ SMA 200 และ RSI
+        df['SMA200'] = df['Close'].rolling(200).mean()
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+        return df
+    except: return None
+
+# --- 4. ส่วนแสดงผลหลัก ---
+st.title("""🛡️ Safe Heaven Quant Pro""")
+
+# Sidebar สำหรับตั้งค่าหน่วยเวลา
+st.sidebar.header
