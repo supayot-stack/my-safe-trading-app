@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
 st.markdown("<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>", unsafe_allow_html=True)
 
-# --- 2. ระบบ Watchlist (หุ้นเริ่มต้น Top 5) ---
+# --- 2. ระบบ Watchlist (เริ่มต้นด้วย Top 5) ---
 if 'my_watchlist' not in st.session_state:
     st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "NVDA", "AAPL", "BTC-USD"]
 
@@ -32,8 +32,4 @@ def fetch_data(ticker, interval):
         return None
 
 # --- 4. การสร้าง Tabs ---
-tab1, tab2 = st.tabs(["📊 ระบบสแกนและกราฟ", "📖 คู่มือการทำงาน"])
-
-with tab2:
-    st.header("📖 คู่มือการใช้งาน")
-    st.info("ระบบ
+tab1, tab2 = st.tabs(["
