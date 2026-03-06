@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 # --- 1. การตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
 
-# CSS ตกแต่ง
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
@@ -41,4 +40,8 @@ with tab2:
     with st.container():
         st.markdown('<div class="guide-section">', unsafe_allow_html=True)
         st.subheader("🧬 2. ตัวชี้วัด (Indicators)")
-        st.write("ใช้ SMA 200 วันดูเทรนด์ และ RSI
+        st.write("ใช้ SMA 200 วันดูแนวโน้ม และใช้ RSI 14 วันดูแรงเหวี่ยงของราคา")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown('<div
