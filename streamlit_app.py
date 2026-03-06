@@ -32,9 +32,8 @@ tf = st.sidebar.selectbox(
 
 # --- 3. ฟังก์ชันคำนวณและดึงข้อมูล ---
 def get_optimal_period(timeframe):
-    """เลือกช่วงเวลาย้อนหลังให้เหมาะสมกับ Timeframe เพื่อความเร็วและความแม่นยำ"""
     if timeframe == "1h": return "1mo"
-    if timeframe == "1d": return "2y"   # ต้อง 2 ปีเพื่อให้ SMA200 คำนวณได้
+    if timeframe == "1d": return "2y"   
     if timeframe == "1wk": return "5y"
     return "2y"
 
@@ -63,10 +62,8 @@ def fetch_scan_data(tickers, timeframe):
             last = df.iloc[-1]
             prev = df.iloc[-2]
             
-            # การตัดสินใจ (Algorithm)
             trend = "📈 Up Trend" if last['Close'] > last['SMA200'] else "📉 Down Trend"
             
-            # กำหนด Action พร้อมสี
             if trend == "📈 Up Trend" and last['RSI'] < 40:
                 action = "🟢 STRONG BUY"
             elif last['RSI'] > 75:
@@ -78,4 +75,32 @@ def fetch_scan_data(tickers, timeframe):
                 
             results.append({
                 "Ticker": ticker,
-                "Price":
+                "Price": f"{float(last['Close']):,.2f}",
+                "Change %": f"{((float(last['Close']) - float(prev['Close'])) / float(prev['Close']) * 100):.2f}%",
+                "RSI": round(float(last['RSI']), 2),
+                "Trend": trend,
+                "Action": action
+            })
+        except: continue
+    return pd.DataFrame(results)
+
+# --- 4. ส่วนการแสดงผล (Main UI) ---
+if assets:
+    summary_df = fetch_scan_data(assets, tf)
+    
+    if not summary_df.empty:
+        cols = st.columns(len(summary_df))
+        for i, row in summary_df.iterrows():
+            with cols[i]:
+                st.metric(row['Ticker'], row['Price'], row['Change %'])
+
+        st.subheader("📊 ตารางสรุปสัญญาณปัจจุบัน")
+        
+        def style_action(val):
+            color = 'white'
+            if 'BUY' in val: color = '#d4edda'
+            elif 'EXIT' in val: color = '#f8d7da'
+            elif 'PROFIT' in val: color = '#fff3cd'
+            return f'background-color: {color}'
+
+        st.dataframe(summary_df.style.applymap(style_action, subset=['Action']), use_container_width=True)
