@@ -22,18 +22,25 @@ def fetch_data(ticker, interval):
         if df is None or df.empty or len(df) < 200: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        # Indicators Calculation
+        # --- SMA & RSI ---
         df['SMA200'] = df['Close'].rolling(200).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+        
+        # --- RVOL ---
         df['Vol_Avg'] = df['Volume'].rolling(20).mean()
         df['RVOL'] = df['Volume'] / (df['Vol_Avg'] + 1e-9)
         
-        # Squeeze Logic
+        # --- Squeeze Logic (แก้ไขจุด Error ตรงนี้) ---
         df['MA20'] = df['Close'].rolling(20).mean()
         std = df['Close'].rolling(20).std()
         df['Upper_BB'] = df['MA20'] + (2 * std)
         df['Lower_BB'] = df['MA20'] - (2 * std)
-        tr = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] -
+        
+        # แยกคำนวณ True Range (TR) ให้สั้นลงเพื่อความปลอดภัย
+        h_l = df['High'] - df['Low']
+        h_pc = abs(df['High'] - df['Close'].shift(1))
+        l_pc = abs(df['Low'] - df['Close'].shift(1))
+        df['TR'] = np.maximum(
