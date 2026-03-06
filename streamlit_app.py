@@ -2,51 +2,37 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
 
-# --- 1. SETTINGS & STYLE ---
-st.set_page_config(page_title="QuantPro Dashboard", layout="wide")
+st.set_page_config(page_title="Safe Heaven", layout="wide")
+st.title("🛡️ Safe Heaven Scanner")
 
-# CSS สำหรับตกแต่งให้เหมือน Reddit Dashboard
-st.markdown("""
-<style>
-    .reportview-container { background: #0e1117; }
-    .metric-card {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    .guide-section {
-        background-color: #0d1117;
-        border-left: 4px solid #58a6ff;
-        padding: 10px 20px;
-        margin: 10px 0px;
-        border-radius: 0 10px 10px 0;
-    }
-    .status-buy { color: #3fb950; font-weight: bold; }
-    .status-exit { color: #f85149; font-weight: bold; }
-</style>
-""", unsafe_allow_html=True)
+assets = ["BTC-USD", "ETH-USD", "GC=F", "NVDA", "AAPL"]
 
-if 'my_watchlist' not in st.session_state:
-    st.session_state.my_watchlist = ["BTC-USD", "NVDA", "AAPL", "TSLA", "^SET50.BK"]
+def calculate_indicators(df):
+    # คำนวณ SMA 200
+    df['SMA200'] = df['Close'].rolling(window=200).mean()
+    # คำนวณ RSI (แบบ Manual)
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    return df
 
-# --- 2. DATA ENGINE ---
-@st.cache_data(ttl=300)
-def fetch_data(ticker, interval):
-    try:
-        p = "max" if interval == "1d" else "60d"
-        df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
-        if df is None or df.empty: return None
+@st.cache_data(ttl=3600)
+def get_data():
+    results = []
+    for ticker in assets:
+        df = yf.download(ticker, period="2y", auto_adjust=True)
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        df = calculate_indicators(df)
+        last = df.iloc[-1]
         
-        # Indicators
-        df['SMA200'] = df['Close'].rolling(200).mean()
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-        df['RVOL'] = df['Volume'] / (df['Volume'].rolling(20).mean() + 1e-
+        status = "📈 Up Trend" if last['Close'] > last['SMA200'] else "📉 Down Trend"
+        action = "🟢 BUY" if (status == "📈 Up Trend" and last['RSI'] < 45) else "Wait"
+        
+        results.append({"Ticker": ticker, "Price": round(float(last['Close']), 2), "RSI": round(float(last['RSI']), 2), "Trend": status, "Action": action})
+    return pd.DataFrame(results)
+
+summary = get_data()
+st.table(summary) # ใช้ table ธรรมดาเพื่อความชัวร์
