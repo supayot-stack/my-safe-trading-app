@@ -84,6 +84,11 @@ if assets:
         
         for i, row in summary_df.iterrows():
             with cols[i]:
-                # กำหนดสีตามจังหวะ
-                bg_color = "#ffffff"; text_color = "#212529"
+                # ตรวจสอบการย่อหน้าส่วนนี้อย่างละเอียด
+                bg_color = "#ffffff"
+                text_color = "#212529"
+                
                 if "BUY" in row['Action']:
+                    bg_color = "#28a745"
+                    text_color = "#ffffff"
+                elif "EXIT"
