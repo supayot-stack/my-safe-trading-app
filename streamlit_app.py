@@ -52,3 +52,67 @@ def fetch_data(tickers):
             if last_price > float(last['SMA200']) and float(last['RSI']) < 40:
                 action = "🟢 BUY"
             elif float(last['RSI']) > 75:
+                action = "💰 PROFIT"
+            elif last_price < float(last['SMA200']):
+                action = "🔴 EXIT"
+            else:
+                action = "Wait"
+                
+            results.append({
+                "Ticker": ticker,
+                "Price": f"{last_price:,.2f}",
+                "Change %": f"{change_pct:.2f}%",
+                "RSI": round(float(last['RSI']), 2),
+                "Trend": "📈 Up" if last_price > float(last['SMA200']) else "📉 Down",
+                "Action": action
+            })
+        except: 
+            continue
+    return pd.DataFrame(results)
+
+# --- 4. การแสดงผล ---
+if assets:
+    summary_df = fetch_data(assets)
+    if not summary_df.empty:
+        st.subheader("🚀 สรุปสัญญาณปัจจุบัน")
+        cols = st.columns(len(summary_df))
+        for i, row in summary_df.iterrows():
+            with cols[i]:
+                # เลือกสีตามสถานะ
+                bg = "#ffffff"; txt = "#212529"
+                if "BUY" in row['Action']: bg = "#28a745"; txt = "#ffffff"
+                elif "EXIT" in row['Action']: bg = "#dc3545"; txt = "#ffffff"
+                elif "PROFIT" in row['Action']: bg = "#ffc107"; txt = "#212529"
+                
+                st.markdown(f"""
+                    <div style="background-color: {bg}; padding: 20px; border-radius: 15px; text-align: center; border: 1px solid #ddd; color: {txt};">
+                        <h3 style="margin:0;">{row['Ticker']}</h3>
+                        <h2 style="margin:10px 0;">{row['Price']}</h2>
+                        <div style="font-weight: bold;">{row['Action']}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.divider()
+        st.subheader("📊 ตารางเปรียบเทียบ")
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+        selected = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟ:", assets)
+        df_plot = yf.download(selected, period="2y", interval="1d", auto_adjust=True)
+        if isinstance(df_plot.columns, pd.MultiIndex): 
+            df_plot.columns = df_plot.columns.get_level_values(0)
+        df_plot = calculate_indicators(df_plot)
+
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+        fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='orange', width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='purple', width=1.5)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+        
+        fig.update_layout(height=650, template="plotly_white", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("🔄 กำลังโหลดข้อมูล หรือไม่มีหุ้นที่มีประวัติยาวพอ (ต้องมีข้อมูล 200 วันขึ้นไป)")
+else:
+    st.info("👈 เลือกหุ้นที่แถบด้านข้างเพื่อเริ่มต้น")
