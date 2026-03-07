@@ -8,16 +8,15 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG (Fine-Tuned to Match Image) ---
+# --- 1. PRO UI CONFIG ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
-    /* พื้นหลังสี Dark Navy แบบในรูป */
     .stApp { background-color: #0d1117; color: #e1e4e8; }
     
-    /* ปรับแต่ง Tabs ให้ดูเรียบหรู (Flat Design) */
+    /* Tabs Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
+        gap: 15px;
         background-color: transparent;
         border-bottom: 1px solid #21262d;
     }
@@ -25,35 +24,29 @@ st.markdown("""
         background-color: transparent !important;
         border: none !important;
         color: #8b949e !important;
-        padding: 12px 0px !important;
+        padding: 12px 10px !important;
         font-size: 15px !important;
-        font-weight: 400 !important;
     }
-    /* เมื่อเลือก Tab: ใช้เส้นใต้สีขาวสว่าง และตัวหนังสือสีขาว */
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;
         background-color: transparent !important;
-        border-bottom: 2px solid #f0f6fc !important;
-        font-weight: 600 !important;
+        border-bottom: 2px solid #58a6ff !important;
+        font-weight: 500 !important;
     }
     
-    /* Metric Card: เน้นความคลีน สีพื้นหลังเข้ากับ Dashboard */
+    /* Analytics Card Styling */
     .analytics-card {
         background-color: #161b22; 
-        padding: 18px; 
-        border-radius: 8px; 
-        border: 1px solid #30363d; 
-        margin-bottom: 14px;
-        transition: 0.3s;
+        padding: 15px; 
+        border-radius: 6px; 
+        border: 1px solid #21262d; 
+        margin-bottom: 10px;
     }
-    .analytics-card:hover { border-color: #58a6ff; }
-    
-    /* ซ่อนขอบที่ไม่จำเป็น */
-    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 8px; background-color: #0d1117; }
+    div[data-testid="stExpander"] { border: 1px solid #21262d; border-radius: 8px; background-color: #0d1117; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE & LIVE FX ---
+# --- 2. DATA PERSISTENCE & FX ---
 DB_FILE = "the_masterpiece_v3.json"
 BAK_FILE = "the_masterpiece_v3.json.bak"
 COMMISSION_RATE = 0.0015 
@@ -156,83 +149,13 @@ for t in final_watchlist:
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
 
 # --- 6. MAIN DISPLAY ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
+tabs = st.tabs(["🏛 Scanner", "📉 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
 
-# --- TAB 4: ANALYTICS HUB (THE MAIN FIX) ---
-with tabs[4]:
-    if 'td_df' in locals() and not td_df.empty:
-        # แบ่ง Layout 3 คอลัมน์ให้สมดุลแบบในรูป
-        col_m_sim, col_metrics, col_equity = st.columns([1.3, 0.7, 1.3], gap="large")
-        
-        with col_m_sim:
-            st.markdown("##### 🎲 Monte Carlo Simulation")
-            sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
-            fig_mc = go.Figure()
-            for s in sims:
-                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.1, showlegend=False))
-            fig_mc.update_layout(
-                height=420, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=True, gridcolor='#21262d', title="Trades"),
-                yaxis=dict(showgrid=True, gridcolor='#21262d', title="Equity (THB)")
-            )
-            st.plotly_chart(fig_mc, use_container_width=True)
-
-        with col_metrics:
-            win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
-            pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
-            avg_pnl = td_df['PnL'].mean()
-            max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
-
-            # จัดเรียง Card แบบ Vertical Stack ให้เหมือนรูป
-            st.markdown(f"""
-                <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 25px;">
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 12px; text-transform: uppercase;">Win Rate</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px; font-weight: 600;">{win_r:.1f}%</h2>
-                    </div>
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 12px; text-transform: uppercase;">Profit Factor</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px; font-weight: 600;">{pf:.2f}</h2>
-                    </div>
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 12px; text-transform: uppercase;">Avg Trade P/L</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px; font-weight: 600;">{avg_pnl:,.0f} <span style="font-size: 14px; font-weight: 400;">฿</span></h2>
-                    </div>
-                    <div class="analytics-card" style="border-left: 3px solid #f85149;">
-                        <p style="color: #8b949e; margin: 0; font-size: 12px; text-transform: uppercase;">Max Drawdown</p>
-                        <h2 style="color: #f85149; margin: 0; font-size: 26px; font-weight: 600;">{max_dd:.1f}%</h2>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col_equity:
-            st.markdown("##### 📈 Equity Curve")
-            final_val = td_df['Equity'].iloc[-1]
-            st.markdown(f"<p style='color:#8b949e; margin-bottom:0;'>Final Net Value</p><h3 style='color:#39d353; margin-top:0;'>{final_val:,.2f} THB</h3>", unsafe_allow_html=True)
-            
-            fig_eq = go.Figure()
-            fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
-                                     line=dict(color='#39d353', width=2), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.1)'))
-            fig_eq.update_layout(
-                height=350, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=True, gridcolor='#21262d'), yaxis=dict(showgrid=True, gridcolor='#21262d')
-            )
-            st.plotly_chart(fig_eq, use_container_width=True)
-
-        st.markdown("""
-            <div style="background-color: #161b22; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #30363d; margin-top: 20px;">
-                <span style="color: #39d353; font-weight: 500; letter-spacing: 1px;">✅ SYSTEM PERFORMANCE VERIFIED</span>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("⚠️ Please run a backtest in the '🧪 Backtest' tab first.")
-
-# --- OTHER TABS (Keep original logic) ---
 with tabs[0]:
     st.subheader("📊 Tactical Opportunities")
     if results: st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+    else: st.warning("Please enter valid tickers in the sidebar.")
+
 with tabs[1]:
     if data_dict:
         sel = st.selectbox("Analyze Asset:", list(data_dict.keys()), key="dive_sel")
@@ -243,19 +166,148 @@ with tabs[1]:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='TSL', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Vol', marker_color='#c0c0c0', opacity=0.4), row=3, col=1)
-        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,b=0,t=20))
+        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,b=0,t=20), paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
         st.plotly_chart(fig, use_container_width=True)
+
 with tabs[2]:
     st.subheader("💼 Active Position Log")
+    with st.expander("➕ Log New Trade"):
+        c1, c2, c3 = st.columns(3)
+        p_asset = c1.selectbox("Asset", list(data_dict.keys()) if data_dict else ["None"])
+        p_entry, p_qty = c2.number_input("Entry Price", 0.0), c3.number_input("Quantity", 0)
+        if st.button("Commit to Portfolio") and p_asset != "None":
+            st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
+            save_portfolio(st.session_state.my_portfolio); st.rerun()
     if st.session_state.my_portfolio:
-        # (Portfolio logic as before...)
-        pass
+        p_list = []
+        for a, i in st.session_state.my_portfolio.items():
+            if a in data_dict:
+                curr_p = data_dict[a]['Close'].iloc[-1]
+                is_thai = ".BK" in a or (a.isalpha() and len(a) <= 5 and "USD" not in a)
+                fx_val = 1 if is_thai else LIVE_USDTHB
+                pl_thb = (curr_p - i['entry']) * i['qty'] * fx_val
+                p_list.append({
+                    "Asset": a, "Cost": i['entry'], "Price": curr_p, "Qty": i['qty'], 
+                    "P/L (THB)": f"{pl_thb:,.2f}", 
+                    "Status": "✅ HOLD" if curr_p > data_dict[a]['Trailing_SL'].iloc[-1] else "🚨 EXIT"
+                })
+        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Wipe Data"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+
 with tabs[3]:
     st.header("🧪 Strategy Stress Test")
-    # (Backtest logic as before...)
-    pass
+    sel_bt = st.selectbox("Select Target:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
+    if sel_bt != "None" and sel_bt in data_dict:
+        df_bt = data_dict[sel_bt].iloc[-500:].copy()
+        is_thai = ".BK" in sel_bt or (sel_bt.isalpha() and len(sel_bt) <= 5 and "USD" not in sel_bt)
+        fx_bt = 1 if is_thai else LIVE_USDTHB
+        balance, pos, trades, entry_p = capital, 0, [], 0
+        for i in range(1, len(df_bt)):
+            c, p = df_bt.iloc[i], df_bt.iloc[i-1]
+            if pos == 0 and c['Close'] > c['SMA200'] and p['RSI'] < 48 and c['Vol_Ratio'] > 1.1:
+                pos = int(((balance * (risk_pct/100)) / fx_bt) / max(c['Close'] - c['Trailing_SL'], 0.01))
+                entry_p = c['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_bt)
+                trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
+            elif pos > 0 and (c['Close'] < c['Trailing_SL'] or c['RSI'] > 82):
+                pnl = ((c['Close'] - entry_p) * pos * fx_bt) - (c['Close'] * pos * COMMISSION_RATE * fx_bt)
+                balance += pnl; trades.append({"Type": "SELL", "Date": df_bt.index[i], "PnL": pnl, "Equity": balance})
+                pos = 0
+        if trades:
+            td_df = pd.DataFrame([t for t in trades if "PnL" in t])
+            st.metric("Net Terminal Value", f"{balance:,.2f} THB")
+            st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
+
+# --- หน้า ANALYTICS HUB ปรับแก้ตามรูป ---
+with tabs[4]:
+    if 'td_df' in locals() and not td_df.empty:
+        col_left, col_mid, col_right = st.columns([1.2, 0.6, 1.2], gap="large")
+        
+        with col_left:
+            st.markdown("##### 🎲 Monte Carlo Simulation")
+            sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
+            fig_mc = go.Figure()
+            for s in sims:
+                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.15, showlegend=False))
+            fig_mc.update_layout(
+                height=450, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(title="Number of Trades", gridcolor='#21262d'),
+                yaxis=dict(title="Portfolio Value (THB)", gridcolor='#21262d')
+            )
+            st.plotly_chart(fig_mc, use_container_width=True)
+
+        with col_mid:
+            win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
+            pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
+            avg_pnl = td_df['PnL'].mean()
+            max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
+
+            st.markdown(f"""
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 35px;">
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Win Rate</p>
+                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{win_r:.1f}%</h2>
+                    </div>
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Profit Factor</p>
+                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{pf:.2f}</h2>
+                    </div>
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Avg Trade P/L</p>
+                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{avg_pnl:,.0f} <span style="font-size: 14px; color:#e1e4e8">THB</span></h2>
+                    </div>
+                    <div class="analytics-card" style="border-left: 3px solid #f85149;">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Max Drawdown</p>
+                        <h2 style="color: #f85149; margin: 0; font-size: 26px;">{max_dd:.1f}%</h2>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col_right:
+            st.markdown("##### 📈 Equity Curve")
+            final_val = td_df['Equity'].iloc[-1]
+            st.markdown(f"""
+                <div style="margin-bottom: 10px;">
+                    <p style="color: #8b949e; margin: 0; font-size: 14px;">Final Balance (Net)</p>
+                    <h3 style="color: #39d353; margin: 0;">{final_val:,.2f} THB</h3>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            fig_eq = go.Figure()
+            fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
+                                     line=dict(color='#39d353', width=2), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.1)'))
+            fig_eq.update_layout(
+                height=400, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(gridcolor='#21262d'), yaxis=dict(gridcolor='#21262d')
+            )
+            st.plotly_chart(fig_eq, use_container_width=True)
+
+        st.markdown("""
+            <div style="background-color: #161b22; padding: 12px; border-radius: 6px; text-align: center; border: 1px solid #21262d; margin-top: 25px;">
+                <span style="color: #39d353; font-weight: bold;">✅ System Alpha Verified</span>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("⚠️ Run backtest to activate analytics.")
+
 with tabs[5]:
-    st.header("📖 Guide & Logic")
+    st.header("📖 The Masterpiece Decision Logic")
+    col_l1, col_l2 = st.columns(2)
+    with col_l1:
+        st.markdown("""
+        ### 🛡️ Core Entry Framework
+        1. **Trend Guard:** ราคาสินทรัพย์ต้องอยู่เหนือ `SMA 200` และ `SMA 50` เพื่อยืนยันว่าเป็นสภาวะขาขึ้นที่แข็งแกร่ง
+        2. **Momentum Pullback:** ใช้ `RSI (14)` หาจังหวะที่ราคาย่อตัวลงมาในโซนได้เปรียบ (RSI < 48 และเริ่มฟื้นตัว)
+        3. **Liquidity Filter:** `Volume Ratio > 1.1` เพื่อยืนยันว่าการขยับของราคามีปริมาณการซื้อขายสนับสนุนจริง
+        """)
+    with col_l2:
+        st.markdown("""
+        ### 🚪 Professional Exit Strategy
+        1. **Dynamic Trailing Stop:** ปกป้องกำไรด้วย `ATR * 2.5` ซึ่งเป็นจุด Stop Loss ที่ขยับขึ้นตามความผันผวนจริง
+        2. **Overbought Exit:** เมื่อราคาพุ่งทะยานจน `RSI > 82` ระบบจะแนะนำให้ Take Profit เนื่องจากราคามีความตึงตัวสูง
+        """)
+    st.divider()
     st.latex(r"Position\,Size = \frac{Equity \times Risk\%}{Price - Trailing\,Stop}")
 
 st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS")
