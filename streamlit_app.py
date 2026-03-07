@@ -6,10 +6,9 @@ import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. SETTING & ULTRA DARK CSS (FIXED SYNTAX) ---
-st.set_page_config(page_title="Institutional Quant V7.5", layout="wide")
+# --- 1. ULTRA DARK UI ---
+st.set_page_config(page_title="Institutional Quant V7.6", layout="wide")
 
-# แก้ไขจุดที่ทำให้เกิด SyntaxError โดยการตรวจสอบจุดปิดเครื่องหมาย """ ให้ชัดเจน
 st.markdown("""
 <style>
     .stApp { background-color: #000000; color: #ffffff; }
@@ -20,9 +19,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     div[data-testid="stMetricValue"] { color: #00ffcc; font-weight: bold; }
-    .stTabs [data-baseweb="tab-list"] { background-color: #000000; }
-    .stTabs [data-baseweb="tab"] { color: #8b949e; }
-    .stTabs [aria-selected="true"] { color: #ffffff; border-bottom-color: #007bff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,19 +28,20 @@ def send_discord(webhook, data):
     color = 65280 if "ACC" in data['Regime'] else 16711680
     payload = {
         "embeds": [{
-            "title": f"🏛️ Alert: {data['Asset']}",
+            "title": f"🏛️ Trade Alert: {data['Asset']}",
             "color": color,
             "fields": [
                 {"name": "Signal", "value": data['Regime'], "inline": True},
-                {"name": "Price", "value": f"{data['Price']}", "inline": True},
-                {"name": "Target Qty", "value": data['Qty'], "inline": False}
+                {"name": "Price", "value": str(data['Price']), "inline": True},
+                {"name": "Quantity", "value": data['Qty'], "inline": False},
+                {"name": "SL / TP", "value": f"🚫 {data['SL']} / 🎯 {data['TP']}", "inline": False}
             ]
         }]
     }
     try: requests.post(webhook, json=payload)
     except: pass
 
-# --- 3. QUANT ENGINE ---
+# --- 3. QUANT ENGINE (Fixed ATR Syntax) ---
 @st.cache_data(ttl=3600)
 def get_data(ticker):
     try:
@@ -56,12 +53,16 @@ def get_data(ticker):
         if df.empty or len(df) < 200: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 
-        # Indicators
+        # 1. Trend Indicators
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
+
+        # 2. RSI Calculation
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
         
-        tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-
+        # 3. ATR Calculation (FIXED SYNTAX)
+        h_l = df['High'] - df['Low']
+        h_pc = abs(df['High'] - df['Close'].shift())
