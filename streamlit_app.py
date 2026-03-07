@@ -9,7 +9,7 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Gemini Master Quant v2.6 Ultimate", layout="wide")
+st.set_page_config(page_title="Master Quant", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
@@ -299,4 +299,4 @@ with tabs[6]:
         st.code("if New_SL > Old_SL: SL = New_SL else: SL = Old_SL", language='python')
         st.caption("ตรรกะ 'กำแพงขยับได้' ที่จะยกขึ้นตามราคากำไรเท่านั้น")
     st.divider()
-    st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
+    st.caption("Master Quante | Built for Professional Statistical Trading")
