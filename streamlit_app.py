@@ -9,19 +9,18 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Gemini Master Quant v2.3 Pro", layout="wide")
+st.set_page_config(page_title="Gemini Master Quant v2.4 Pro", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
     .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
-    .highlight-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 10px; border: 1px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & SECURITY ---
 DB_FILE = "portfolio_data_v2.json"
 BAK_FILE = "portfolio_data_v2.json.bak"
-USD_THB_RATE = 36.0 
+USD_THB_RATE = 36.5 # ปรับตามค่าเงินปัจจุบัน
 
 def load_portfolio():
     for file in [DB_FILE, BAK_FILE]:
@@ -41,44 +40,52 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS"]
+    thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP"]
     if ticker in thai_stocks and not ticker.endswith(".BK"):
         return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE (BULK & ERROR PROOF) ---
+# --- 3. CORE QUANT ENGINE (RELIABILITY OPTIMIZED) ---
 @st.cache_data(ttl=1800)
 def fetch_all_data(tickers):
     if not tickers: return {}
     try:
-        raw_data = yf.download(tickers, period="2y", interval="1d", auto_adjust=True, progress=False)
+        # ดึงข้อมูล 3 ปีเพื่อให้ SMA200 มีข้อมูลเพียงพอสำหรับหุ้นส่วนใหญ่
+        raw_data = yf.download(tickers, period="3y", interval="1d", auto_adjust=True, progress=False)
         processed = {}
+        
         for t in tickers:
-            # จัดการโครงสร้าง Multi-index กรณีดาวน์โหลดหลายตัว
+            # การดึงข้อมูลแบบ Safe Multi-index
             if isinstance(raw_data.columns, pd.MultiIndex):
-                if t in raw_data.columns.get_level_values(1):
+                try:
                     df = raw_data.xs(t, axis=1, level=1).copy()
-                else: continue
+                except: continue
             else:
                 df = raw_data.copy()
             
-            # ตรวจสอบความสมบูรณ์ของข้อมูลก่อนคำนวณ (ป้องกัน IndexError)
-            if df.empty or len(df) < 200: continue
+            # เช็คข้อมูลขั้นต่ำ (ลดเหลือ 30 วันเพื่อให้แสดงผลหุ้นใหม่ได้)
+            if df.empty or len(df) < 30: continue
             
-            # --- Indicators ---
-            df['SMA200'] = df['Close'].rolling(200).mean()
-            df['SMA50'] = df['Close'].rolling(50).mean()
+            # --- Indicators (ใช้ min_periods=1 เพื่อป้องกันข้อมูลหายจาก NaN) ---
+            df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
+            df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
+            
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-            tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
-            df['ATR'] = tr.rolling(14).mean()
-            df['SL'] = df['Close'] - (df['ATR'] * 2.5)
-            df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
-            df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan) # กันหารศูนย์
             
-            processed[t] = df.dropna()
+            tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
+            df['ATR'] = tr.rolling(14, min_periods=1).mean()
+            df['SL'] = df['Close'] - (df['ATR'] * 2.5)
+            
+            df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
+            df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
+            
+            # เติมค่าว่างด้วยค่าที่ใกล้ที่สุดแทนการลบทิ้ง เพื่อรักษาแถวปัจจุบันไว้
+            df = df.ffill().bfill() 
+            processed[t] = df
+            
         return processed
     except Exception as e:
         st.error(f"Data Fetch Error: {e}")
@@ -89,15 +96,15 @@ if 'my_portfolio' not in st.session_state:
     st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.title("🛡️ Secure Quant Pro v2.3")
+    st.title("🛡️ Secure Quant Pro v2.4")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Tickers (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
-# --- 5. DATA PROCESSING (INDEX-SAFE LOOP) ---
+# --- 5. DATA PROCESSING (STABILITY LOOP) ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 
@@ -106,21 +113,23 @@ for ticker in final_watchlist:
         continue
         
     df = data_dict[ticker]
-    # ตรวจสอบความยาวข้อมูลอีกครั้งก่อน iloc
     if len(df) < 2: continue
     
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     p = curr['Close']
     
-    # Strategy Logic
-    if p > curr['SMA200'] and p > curr['SMA50'] and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2:
+    # Strategy Logic (เพิ่มการเช็คค่า NaN ของ SMA)
+    is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
+    is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
+    
+    if is_above_sma and is_above_mid and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2:
         sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
-    elif p < curr['SMA200']: sig = "🔴 BEARISH"
+    elif not is_above_sma: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
-    # Currency Handling
+    # Position Sizing
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
@@ -146,7 +155,7 @@ with tabs[0]:
     if not res_df.empty:
         st.dataframe(res_df, use_container_width=True, hide_index=True)
     else:
-        st.info("ไม่มีข้อมูลเพียงพอสำหรับการวิเคราะห์ กรุณาตรวจสอบชื่อ Ticker")
+        st.warning("⚠️ ไม่พบข้อมูลหุ้นในลิสต์ หรือ Yahoo Finance ขัดข้องชั่วคราว")
 
 with tabs[1]:
     if data_dict:
@@ -187,7 +196,7 @@ with tabs[2]:
                 save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.subheader("🧪 Advanced Analytics & Risk")
+    st.subheader("🧪 Analytics & Risk Control")
     col_l, col_r = st.columns([2, 1])
     with col_l:
         price_dict = {t: df['Close'] for t, df in data_dict.items()}
@@ -197,23 +206,20 @@ with tabs[3]:
             fig_corr.update_layout(height=450, template="plotly_dark")
             st.plotly_chart(fig_corr, use_container_width=True)
     with col_r:
-        st.write("### 🏗️ Future Modules")
-        for m in ["Backtesting", "Sector Rotation", "AI Sentiment"]: st.checkbox(m, disabled=True)
-        st.divider()
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (USD_THB_RATE if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
             st.metric("Total Cash at Risk (THB)", f"{t_risk:,.2f}")
             st.progress(min(t_risk / capital, 1.0) if capital > 0 else 0)
+            st.caption(f"Risk/Capital: {(t_risk/capital)*100:.2f}%")
 
 with tabs[5]:
     st.header("🧠 System Architecture & Quant Logic")
     st.markdown("""
-    ### 1. ระบบจัดการข้อมูล (Data Engine)
-    * **Bulk Download:** ดึงข้อมูลรวดเดียวเพื่อลด Request และป้องกันการโดน Yahoo Finance แบน
-    * **Index-Out-of-Bounds Protection:** ตรวจสอบความว่างเปล่าของ DataFrame ก่อนเข้าถึงแถวข้อมูล (แก้บั๊ก IndexError)
-    * **Auto-Backup:** ระบบสำรองไฟล์ `.bak` อัตโนมัติ ป้องกันพอร์ตเสียหาย
+    ### 1. ระบบจัดการข้อมูล (Data Reliability)
+    * **Min Periods Logic:** ป้องกันข้อมูลหายจากค่าว่าง (NaN) ในช่วงต้นของหุ้นใหม่ ทำให้หุ้นแสดงผลได้ครบถ้วนขึ้น
+    * **FFill & BFill:** ระบบเติมค่าว่างอัตโนมัติเพื่อรักษาแถวข้อมูลปัจจุบัน (Current Row) ไม่ให้ถูกลบโดย `dropna`
     
-    ### 2. สูตรคำนวณเด่น
-    * **Position Sizing (USD):** $$Quantity = \\frac{(Capital_{THB} \\times Risk\%) / FX\_Rate}{Price_{USD} - SL_{USD}}$$
-    * **ATR Stop-Loss:** ใช้ค่าเฉลี่ยความผันผวนย้อนหลัง 14 วัน คูณ 2.5 เพื่อหาจุดตัดขาดทุนที่เหมาะสม
+    ### 2. การบริหารความเสี่ยง (Risk Management)
+    * **ATR Adaptive SL:** จุดตัดขาดทุนที่ปรับตามความผันผวนจริงของสินทรัพย์นั้นๆ
+    * **Currency Protection:** แยกแยะสกุลเงิน THB/USD อัตโนมัติเพื่อการคำนวณไม้เทรดที่แม่นยำ
     """)
