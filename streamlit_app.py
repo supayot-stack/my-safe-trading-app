@@ -39,16 +39,17 @@ if 'my_portfolio' not in st.session_state:
 @st.cache_data(ttl=1800)
 def get_data(ticker):
     try:
+        # Thai Stock Auto-suffix logic
+        ticker_final = ticker
         if ticker.isalpha() and len(ticker) <= 5 and ticker.isupper():
-            # Thai Stock Auto-suffix
             thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF", "PTTEP", "OR"]
-            if ticker in thai_list: ticker += ".BK"
+            if ticker in thai_list: ticker_final = ticker + ".BK"
         
-        df = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, progress=False)
+        df = yf.download(ticker_final, period="2y", interval="1d", auto_adjust=True, progress=False)
         if df.empty or len(df) < 200: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        # Core Quant Indicators
+        # Core Indicators
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
         
@@ -58,26 +59,30 @@ def get_data(ticker):
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
         
-        # Volatility & ATR Stop Loss
-        tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
+        # Volatility (ATR) & Risk SL
+        tr = pd.concat([df['High']-df['Low'], 
+                       abs(df['High']-df['Close'].shift()), 
+                       abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
         df['SL'] = df['Close'] - (df['ATR'] * 2.5)
         
-        # Volume Force (Current Vol / 20D Avg)
+        # Volume Force
         df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
         df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
         
         return df.dropna()
     except: return None
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (Control Center) ---
 with st.sidebar:
     st.title("🏦 Personal Quant")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 2.0, 1.0, 0.1)
     
     st.divider()
-    watchlist = st.multiselect("Watchlist:", ["NVDA", "AAPL", "BTC-USD", "SET50.BK", "GOLD", "PTT", "CPALL"], default=["NVDA", "BTC-USD"])
+    watchlist = st.multiselect("Watchlist:", 
+                               ["NVDA", "AAPL", "BTC-USD", "SET50.BK", "GOLD", "PTT", "CPALL", "TSLA"], 
+                               default=["NVDA", "BTC-USD"])
     custom = st.text_input("➕ Add Ticker (e.g. TSLA):").upper().strip()
     
     final_watchlist = list(set(watchlist + ([custom] if custom else [])))
@@ -95,12 +100,13 @@ if final_watchlist:
                 l = df.iloc[-1]
                 p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
                 
-                # Signal Logic (Institution Grade)
+                # Logic: Trend + Momentum + Volume
                 if p > s200 and p > s50 and r < 45 and vr > 1.2: signal = "🟢 ACCUMULATE"
                 elif r > 75: signal = "💰 DISTRIBUTION"
                 elif p < s200: signal = "🔴 BEARISH"
                 else: signal = "⚪ NEUTRAL"
 
+                # Risk Management Calculation
                 risk_cash = capital * (risk_pct / 100)
                 sl_gap = p - l['SL']
                 qty = int(risk_cash / sl_gap) if sl_gap > 0 else 0
@@ -111,7 +117,7 @@ if final_watchlist:
                     "Target Qty": qty, "Stop-Loss": round(l['SL'], 2)
                 })
 
-# --- 6. MAIN TERMINAL ---
+# --- 6. MAIN TERMINAL (Tabs Interface) ---
 t1, t2, t3, t4 = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "📖 Guide"])
 
 with t1:
@@ -123,32 +129,32 @@ with t1:
         st.write("### 📢 Trading Action")
         for r in results:
             if r['Regime'] == "🟢 ACCUMULATE":
-                st.success(f"🔥 **{r['Asset']}**: จุดซื้อได้เปรียบ! Volume เข้ายืนยัน แนะนำเข้า {r['Target Qty']:,} หุ้น ที่ราคา {r['Price']}")
+                st.success(f"🔥 **{r['Asset']}**: Buy Setup! Volume ratio is high ({r['Vol-Force']}). Buy {r['Target Qty']:,} units.")
             elif r['Regime'] == "💰 DISTRIBUTION":
-                st.warning(f"⚠️ **{r['Asset']}**: RSI ตึงมาก ({r['RSI']}) ควรพิจารณาแบ่งขายทำกำไร")
+                st.warning(f"⚠️ **{r['Asset']}**: Overbought ({r['RSI']}). Time to trim profits.")
 
 with t2:
     if data_dict:
         sel = st.selectbox("Select Asset to Analyze:", list(data_dict.keys()))
         df_p = data_dict[sel]
         
-        # 3 Rows: Price, RSI, Volume
+        # Pro Layout with Volume & RSI
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
                           vertical_spacing=0.03, 
                           row_heights=[0.5, 0.15, 0.35])
         
-        # Price Trace
+        # Price & Indicators
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], 
                                      low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow', width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Dynamic SL', line=dict(color='red', dash='dot')), row=1, col=1)
         
-        # RSI Trace
+        # RSI
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
 
-        # Volume Trace (The "Missing" Piece)
+        # Volume Force
         colors = ['#3fb950' if c >= o else '#f85149' for o, c in zip(df_p['Open'], df_p['Close'])]
         fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color=colors), row=3, col=1)
         
@@ -158,72 +164,46 @@ with t2:
 with t3:
     st.subheader("💼 Active Holdings & P/L")
     
-    # Position Input
-    with st.expander("➕ บันทึกไม้เทรด (Add New Position)"):
+    with st.expander("➕ Log New Trade"):
         c1, c2, c3 = st.columns(3)
         p_asset = c1.selectbox("Asset", final_watchlist)
         p_entry = c2.number_input("Entry Price", value=0.0)
         p_qty = c3.number_input("Quantity", value=0)
-        if st.button("Confirm Trade"):
+        if st.button("Save Trade"):
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio)
-            st.success(f"Saved {p_asset} to database!")
+            st.success("Portfolio Updated!")
             st.rerun()
 
-    # Portfolio Table
     if st.session_state.my_portfolio:
         p_data = []
-        total_val = 0
-        total_p_unrealized = 0
-        
+        total_pnl = 0
         for asset, info in list(st.session_state.my_portfolio.items()):
             curr_data = next((item for item in results if item["Asset"] == asset), None)
             if curr_data:
                 cp = curr_data["Price"]
-                sl = curr_data["Stop-Loss"]
                 unrealized = (cp - info['entry']) * info['qty']
-                unrealized_pct = ((cp / info['entry']) - 1) * 100
-                total_p_unrealized += unrealized
-                total_val += (cp * info['qty'])
-                
+                total_pnl += unrealized
                 p_data.append({
-                    "Asset": asset, "Cost": info['entry'], "Price": cp,
+                    "Asset": asset, "Cost": info['entry'], "Current": cp,
                     "Qty": info['qty'], "P/L (THB)": round(unrealized, 2),
-                    "P/L (%)": f"{unrealized_pct:.2f}%",
-                    "Stop-Loss": sl,
-                    "Action": "🚨 EXIT" if cp < sl else "✅ HOLD"
+                    "Status": "🚨 SELL" if cp < curr_data["Stop-Loss"] else "✅ HOLD"
                 })
         
         if p_data:
             st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
+            st.metric("Total Unrealized P/L", f"{total_pnl:,.2f} THB", delta=f"{total_pnl:,.2f}")
             
-            # Summary Metrics
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Market Value", f"{total_val:,.2f}")
-            m2.metric("Total Unrealized P/L", f"{total_p_unrealized:,.2f} THB", delta=f"{total_p_unrealized:,.2f}")
-            m3.metric("Account Health", "SAFE" if total_p_unrealized > -capital*0.05 else "DANGER")
-            
-            if st.button("🗑️ Reset Portfolio (Clear All)"):
+            if st.button("Clear All Data"):
                 st.session_state.my_portfolio = {}
                 save_portfolio({})
                 st.rerun()
-    else:
-        st.info("ยังไม่มีหุ้นในพอร์ต บันทึกข้อมูลไม้เทรดได้ที่เมนูด้านบน")
 
 with t4:
-    st.header("📖 Personal User Guide")
+    st.header("📖 User Guide")
     st.markdown("""
-    ### 🛡️ ระบบบริหารความเสี่ยง (Risk Management)
-    * **Target Qty:** คือจำนวนหุ้นที่ระบบคำนวณมาให้แล้วว่า ถ้าหุ้นตัวนั้นตกไปชน **Stop-Loss** คุณจะขาดทุนเท่ากับ % ที่ตั้งไว้ใน Sidebar เท่านั้น
-    * **Stop-Loss (เส้นประแดง):** คำนวณจากความผันผวนจริง (ATR) ไม่ใช่การสุ่มตัวเลข
-
-    ### 📈 การอ่านกราฟ
-    * **Volume:** แท่งปริมาณการซื้อขายด้านล่างสุด ช่วยยืนยันว่าการเคลื่อนไหวของราคานั้นมีแรงสนับสนุนจริงหรือไม่
-    * **SMA 200 (เส้นเหลือง):** เส้นแบ่งระหว่าง "ขาขึ้น" และ "ขาลง" ในระยะยาว
-
-    ### 💾 ระบบบันทึกข้อมูล
-    * ข้อมูลในหน้า **Portfolio** จะถูกเซฟลงไฟล์ `portfolio_data.json` ทันทีที่คุณกด Confirm ข้อมูลจะไม่หายไปแม้จะปิดหน้าเว็บ
+    1. **🏛 Scanner:** มองหาหุ้นที่มีสถานะ `🟢 ACCUMULATE`
+    2. **📈 Deep-Dive:** ตรวจสอบกราฟแท่งเทียนและ Volume ก่อนตัดสินใจ
+    3. **💼 Portfolio:** บันทึกราคาต้นทุน เพื่อให้ระบบช่วยเฝ้าระวังจุด Stop-Loss
+    4. **🛡 Risk:** อย่าซื้อเกินจำนวน `Target Qty` เพื่อจำกัดความเสี่ยงตามแผน
     """)
-
-    if st.button("🔄 Force Refresh System"):
-        st.rerun()
