@@ -8,7 +8,7 @@ import json
 import os
 import shutil
 
-# --- 1. INSTITUTIONAL UI CONFIG ---
+# --- 1. INSTITUTIONAL UI CONFIG (เปลี่ยนชื่อตรงนี้) ---
 st.set_page_config(page_title="CORE-STRAT TERMINAL", layout="wide")
 st.markdown("""
     <style>
@@ -19,7 +19,9 @@ st.markdown("""
     .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; border-bottom: 2px solid #58a6ff; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 12px; background-color: #161b22; }
     .checklist-card { background-color: #0d1117; padding: 20px; border-radius: 10px; border: 1px dashed #30363d; line-height: 1.8; }
-    h1, h2, h3 { color: #58a6ff; }
+    /* ปรับแต่งหัวข้อให้ดู Professional */
+    h1 { color: #58a6ff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 800; letter-spacing: -1px; }
+    h2, h3 { color: #58a6ff; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,7 +56,6 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    # Auto-suffix for common Thai stocks
     thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_stocks and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
@@ -73,7 +74,6 @@ def fetch_market_data(tickers):
             else: df = raw_data.copy()
             if df.empty or len(df) < 30: continue
             
-            # Indicators with Resilience
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -91,22 +91,23 @@ def fetch_market_data(tickers):
         st.error(f"Data Connection Error: {e}")
         return {}
 
-# --- 4. TERMINAL SIDEBAR ---
+# --- 4. TERMINAL SIDEBAR (เปลี่ยนชื่อที่แสดงผลตรงนี้) ---
 if 'my_portfolio' not in st.session_state: st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.markdown("<h1 style='color: #58a6ff; margin-bottom: 0;'>🏛️ CORE-STRAT</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #8b949e; margin-top: -10px; font-size: 14px;'>QUANT TERMINAL</p>", unsafe_allow_html=True)
-    st.info(f"💵 **FX RATE:** 1 USD = {LIVE_USDTHB:.2f} THB")
+    # ชื่อใหม่แบบเน้นๆ
+    st.markdown("<h1 style='color: #58a6ff; margin-bottom: 0px;'>CORE-STRAT</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #8b949e; margin-top: -5px; font-weight: bold; letter-spacing: 2px;'>TERMINAL</p>", unsafe_allow_html=True)
     st.divider()
+    st.info(f"💵 **FX RATE:** 1 USD = {LIVE_USDTHB:.2f} THB")
     capital = st.number_input("Total Managed Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Asset Watchlist (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Asset Watchlist:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
     st.divider()
-    st.caption("CORE-STRAT ANALYTICS | v2.6.4 Stable")
+    st.caption("CORE-STRAT ANALYTICS | Institutional Grade")
 
 # --- 5. DATA ENGINE EXECUTION ---
 data_dict = fetch_market_data(final_watchlist)
@@ -117,7 +118,6 @@ for ticker in final_watchlist:
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
     
-    # Logic Signal
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
     if is_above_sma and is_above_mid and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
@@ -125,7 +125,6 @@ for ticker in final_watchlist:
     elif not is_above_sma: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
-    # Position Sizing Logic
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
@@ -140,7 +139,7 @@ tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backte
 with tabs[0]:
     st.subheader("📊 Market Opportunity Scanner")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("Please input tickers in the sidebar to start analysis.")
+    else: st.warning("Please input tickers in the sidebar.")
 
 with tabs[1]:
     if data_dict:
@@ -151,10 +150,7 @@ with tabs[1]:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='#f1c40f', width=1.5)), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='#e74c3c', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='#3498db')), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="#e74c3c", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="#2ecc71", row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#95a5a6', opacity=0.5), row=3, col=1)
-        fig.update_layout(height=750, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
+        fig.update_layout(height=750, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
 with tabs[2]:
@@ -181,7 +177,7 @@ with tabs[2]:
         if st.button("🗑️ Purge Portfolio Data"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.header("🧪 Strategy Performance Simulation (1-Year)")
+    st.header("🧪 Strategy Performance Simulation")
     sel_bt = st.selectbox("Asset for Backtest:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
         df_bt = data_dict[sel_bt].iloc[-252:].copy() 
@@ -208,21 +204,19 @@ with tabs[3]:
                 c3.metric("Projected Balance", f"{balance:,.2f} THB")
                 td_df['Equity'] = td_df['PnL'].cumsum() + capital
                 fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#2ecc71')))
-                fig_bt.update_layout(title="Equity Growth Curve", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
 
 with tabs[4]:
-    st.subheader("🧪 Portfolio Analytics & Risk Exposure")
+    st.subheader("🧪 Analytics & Risk Exposure")
     col_l, col_spacer, col_r = st.columns([2, 0.2, 1])
     with col_l:
         st.markdown("##### 📉 Asset Correlation Matrix")
         price_dict = {t: df['Close'] for t, df in data_dict.items()}
         if len(price_dict) > 1:
             corr_df = pd.DataFrame(price_dict).dropna().corr()
-            fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
-            fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
+            fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1))
+            fig_corr.update_layout(height=500, template="plotly_dark")
             st.plotly_chart(fig_corr, use_container_width=True)
-        else: st.info("Add multiple tickers to visualize correlation.")
     with col_r:
         st.write(""); st.write(""); st.write("")
         st.markdown("##### 🛡️ Exposure Metrics")
@@ -232,67 +226,37 @@ with tabs[4]:
             st.metric("Total Net Risk", f"{t_risk:,.2f} THB")
             st.write(f"Risk Utilization: **{risk_util:.2f}%**")
             st.progress(min(risk_util / 100, 1.0))
-            st.caption("Benchmark: Portfolio risk should not exceed 10% of total equity.")
             st.divider()
             st.write("🔧 **Terminal Status**")
-            st.write("• Data Link: ✅ Verified")
-            st.write(f"• USD/THB Sync: ✅ Active ({LIVE_USDTHB})")
-        else: st.warning("No active portfolio data detected.")
+            st.write("• Data Link: ✅ Active")
+        else: st.warning("No portfolio data.")
 
 with tabs[5]:
-    st.header("📖 Operator Manual (Step-by-Step Guide)")
-    st.info("💡 CORE-STRAT is built on statistical discipline, not market prediction.")
+    st.header("📖 Operator Manual")
+    st.info("💡 CORE-STRAT is built on statistical discipline.")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         st.markdown("""
-        ### 1️⃣ Initial Configuration
-        * **Capital:** Input your total investment power (THB).
-        * **Risk per Trade:** The % of capital you are willing to lose if a trade hits Stop-Loss (Standard: 1%).
-        ### 2️⃣ Opportunity Scanning
-        Look for **🟢 ACCUMULATE** signals:
-        * **Trend:** Price > SMA 200 (Primary Trend is Bullish).
-        * **Momentum:** RSI < 45 (Price is currently pulling back/discounted).
-        * **Volume:** Ratio > 1.2 (Institutional buying pressure confirmed).
-        * **Action:** Execute trade based on **Target Qty**.
+        ### 1️⃣ Initial Setup
+        * **Capital:** Total equity for this strategy.
+        * **Risk per Trade:** Max % loss per trade (Standard 1%).
+        ### 2️⃣ Scanning
+        Look for **🟢 ACCUMULATE** signals.
         """)
     with col_g2:
         st.markdown("""
-        ### 3️⃣ Risk Execution (Stop-Loss)
-        * **Discipline:** If the daily close price falls below the **RED DOTTED LINE**, exit immediately.
-        * **ATR Logic:** Stop-Loss adjusts dynamically to market volatility.
-        ### 4️⃣ Profit Realization
-        * **Distribution:** When RSI > 80, the asset is overextended. Consider trimming 50% of the position.
+        ### 3️⃣ Stop-Loss Execution
+        * Exit immediately at **RED DOTTED LINE**.
         """)
     st.divider()
     st.subheader("📝 Pre-Trade Checklist")
-    st.markdown("""
-    <div class="checklist-card">
-    ✅ Signal: 🟢 ACCUMULATE confirmed?<br>
-    ✅ Position Sizing: Target Qty matches current risk parameters?<br>
-    ✅ Commitment: Am I prepared to sell immediately at Stop-Loss?<br>
-    ✅ Diversification: Does this trade keep my Total Risk under 10%?<br>
-    <b>If all boxes checked... Execute Order.</b>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<div class='checklist-card'>✅ Signal Confirmed?<br>✅ Target Qty Verified?<br>✅ Stop-Loss Prepared?</div>", unsafe_allow_html=True)
 
 with tabs[6]:
-    st.header("🧠 System Architecture & Quant Logic")
+    st.header("🧠 System Architecture")
     arch_c1, arch_c2 = st.columns(2)
     with arch_c1:
-        st.markdown(f"""
-        #### ⚙️ Data Layer
-        * **Bulk Retrieval:** 3-year historical lookup for SMA stability.
-        * **Currency Engine:** Dynamic FX conversion for global asset risk.
-        * **Resilience Logic:** Auto-fill for missing data points and IPO support.
-        """)
-        st.markdown("#### 📐 Mathematical Position Sizing")
-        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - StopLoss}")
-    with arch_c2:
-        st.markdown("""
-        #### 📈 Indicator Matrix
-        * **Wilder's RSI:** Smoothed exponential RSI for noise reduction.
-        * **ATR Trailing Stop:** Multiplier of 2.5x ATR for volatility-adjusted exits.
-        * **Performance Engine:** 252-day sliding window backtest.
-        """)
+        st.markdown("#### ⚙️ Data Layer")
+        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
     st.divider()
-    st.caption("CORE-STRAT TERMINAL | Institutional-Grade Statistical Trading")
+    st.caption("CORE-STRAT TERMINAL | Institutional-Grade Suite")
