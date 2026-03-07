@@ -57,7 +57,7 @@ with tab1:
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
 
-    # --- 4. ฟังก์ชันดึงข้อมูล (เพิ่มการคำนวณ ATR) ---
+    # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + ATR Calculations) ---
     def get_data(ticker, interval, data_period):
         try:
             thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
@@ -70,4 +70,11 @@ with tab1:
             df['SMA200'] = df['Close'].rolling(200).mean()
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss =
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+            df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
+            
+            # --- ส่วนคำนวณ ATR (Dynamic Stop Loss) ---
+            high_low = df['High'] - df['Low']
+            high_cp = abs(df['High'] - df['Close'].shift())
+            low_cp = abs(df['Low'] - df['
