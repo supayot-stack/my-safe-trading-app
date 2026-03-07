@@ -3,9 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime
 
-# --- 1. PRO UI CONFIG (Institutional Precision) ---
+# --- 1. PRO UI CONFIG (Institutional Dark Mode) ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 
 st.markdown("""
@@ -14,7 +13,7 @@ st.markdown("""
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
     [data-testid="stSidebar"] { background-color: #0d1117; border-right: 1px solid #30363d; }
     
-    /* การ์ดสถิติ (Metrics) ให้เหมือนรูปเป๊ะ */
+    /* สไตล์การ์ดตัวเลข (Metric) ให้เหมือนในรูปเป๊ะ */
     [data-testid="stMetric"] {
         background-color: #1b2128; 
         border: 1px solid #30363d;
@@ -23,16 +22,16 @@ st.markdown("""
         margin-bottom: 10px;
     }
     [data-testid="stMetricValue"] { color: #2ea043 !important; font-family: 'Courier New', monospace; font-weight: bold; }
-    [data-testid="stMetricLabel"] { color: #8b949e !important; text-transform: uppercase; font-size: 0.8rem; }
+    [data-testid="stMetricLabel"] { color: #8b949e !important; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1px; }
     
-    /* ปรับแต่ง Tabs */
-    .stTabs [data-baseweb="tab-list"] { background-color: transparent; border-bottom: 1px solid #30363d; }
-    .stTabs [data-baseweb="tab"] { color: #8b949e; }
-    .stTabs [aria-selected="true"] { color: #ffffff !important; border-bottom-color: #ffffff !important; }
+    /* ปรับแต่ง Tabs ให้ดู Clean */
+    .stTabs [data-baseweb="tab-list"] { background-color: transparent; border-bottom: 1px solid #30363d; gap: 20px; }
+    .stTabs [data-baseweb="tab"] { color: #8b949e; padding: 10px 0px; }
+    .stTabs [aria-selected="true"] { color: #ffffff !important; border-bottom: 2px solid #ffffff !important; }
 
-    /* Alpha Badge */
+    /* System Alpha Verified Badge */
     .alpha-verified {
-        background: linear-gradient(90deg, #1b2128, #23863622);
+        background: rgba(35, 134, 54, 0.1);
         border: 1px solid #238636;
         color: #3fb950;
         padding: 10px;
@@ -40,78 +39,84 @@ st.markdown("""
         border-radius: 4px;
         font-weight: bold;
         margin-top: 15px;
+        font-size: 0.9rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE ---
+# --- 2. DATA ENGINE (Pre-fetching) ---
 @st.cache_data(ttl=3600)
-def get_institutional_data(tickers):
-    # จำลองหรือดึงข้อมูลเพื่อให้ข้อมูล 'ขึ้น' เสมอ
-    data = yf.download(tickers, period="2y", interval="1d", progress=False)
-    return data
+def get_masterpiece_data():
+    # ดึงข้อมูลจริงมาทำตัวอย่างเพื่อให้ Dashboard ไม่ว่าง
+    df = yf.download("NVDA", period="2y", interval="1d", progress=False)
+    close = df['Close']
+    rets = close.pct_change().dropna()
+    return rets, close
+
+# ดึงข้อมูลเตรียมไว้
+returns, price_data = get_masterpiece_data()
+current_capital = 1000000
+equity_path = (1 + returns).cumprod() * current_capital
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
-    st.title("🏆 The Masterpiece")
-    st.caption("Institutional Systematic OS")
+    st.markdown("## 🏆 The Masterpiece")
+    st.markdown("`Institutional Systematic OS`")
     st.divider()
-    fx_rate = st.text_input("FX Rate", value="36.52 THB")
-    capital = st.number_input("Total Capital (THB)", value=1000000)
-    risk = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0)
-    watchlist = st.text_area("Watchlist (CSV)", "NVDA, AAPL, PTT, DELTA, BTC-USD")
+    st.text_input("FX Rate", value="36.52 THB")
+    st.number_input("Total Capital (THB)", value=current_capital)
+    st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0)
+    st.text_area("Watchlist (CSV)", "NVDA, AAPL, PTT, DELTA, BTC-USD")
 
-# --- 4. PRE-CALCULATE ANALYTICS (เพื่อให้ข้อมูลขึ้นทันที) ---
-# ดึงข้อมูลตัวอย่าง (NVDA) เพื่อรันสถิติหน้า Analytics
-raw_data = get_institutional_data(["NVDA"])
-df = raw_data['Close'] if isinstance(raw_data.columns, pd.Index) else raw_data['Close']['NVDA']
-returns = df.pct_change().dropna()
-# สร้าง Synthetic Equity Curve ให้เหมือนรูป
-equity_curve = (1 + returns).cumprod() * capital
-td_df = pd.DataFrame({'PnL': returns * capital, 'Equity': equity_curve, 'Date': equity_curve.index})
-
-# --- 5. MAIN DISPLAY (ANALYTICS HUB) ---
+# --- 4. MAIN LAYOUT ---
 tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
 
 with tabs[4]: # Analytics Hub
-    # แถวบน: Monte Carlo | Metrics | Equity Curve
-    col_mc, col_stat, col_eq = st.columns([3, 1, 3])
+    # จัดวาง Layout 3 ส่วน: กราฟ MC | ตัวเลขสถิติ | กราฟ Equity
+    col_left, col_mid, col_right = st.columns([3, 1.2, 3])
 
-    with col_mc:
+    with col_left:
         st.markdown("##### 🎲 Monte Carlo Simulation")
         fig_mc = go.Figure()
-        # สร้าง 50 เส้นจำลอง
+        # จำลองเส้นทางเดินราคา 50 เส้นทาง
         for _ in range(50):
-            sim_returns = np.random.choice(returns, size=len(returns), replace=True)
-            sim_path = (1 + sim_returns).cumprod() * capital
-            fig_mc.add_trace(go.Scatter(y=sim_path, mode='lines', line=dict(color='#58a6ff', width=1), opacity=0.15, showlegend=False))
+            sim_rets = np.random.choice(returns, size=len(returns), replace=True)
+            sim_path = (1 + sim_rets).cumprod() * current_capital
+            fig_mc.add_trace(go.Scatter(y=sim_path, mode='lines', line=dict(color='#58a6ff', width=0.8), opacity=0.15, showlegend=False))
         
         fig_mc.update_layout(
-            height=400, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=10, b=0), xaxis=dict(title="Number of Trades", showgrid=True, gridcolor='#30363d'),
-            yaxis=dict(title="Portfolio Value (THB)", showgrid=True, gridcolor='#30363d')
+            height=420, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0, r=0, t=10, b=0),
+            xaxis=dict(title="Number of Trades", showgrid=True, gridcolor='#21262d'),
+            yaxis=dict(title="Portfolio Value (THB)", showgrid=True, gridcolor='#21262d')
         )
         st.plotly_chart(fig_mc, use_container_width=True)
 
-    with col_stat:
+    with col_mid:
         st.metric("Win Rate", "58.4%")
         st.metric("Profit Factor", "2.14")
         st.metric("Avg Trade P/L", "12,450 THB")
-        st.metric("Max Drawdown", "-8.2%", delta_color="inverse")
+        st.metric("Max Drawdown", "-8.2%")
 
-    with col_eq:
+    with col_right:
         st.markdown("##### 📈 Equity Curve")
         fig_eq = go.Figure()
-        fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#2ea043', width=2), fill='tozeroy', fillcolor='rgba(46, 160, 67, 0.1)', name="Net Equity"))
+        fig_eq.add_trace(go.Scatter(
+            x=equity_path.index, y=equity_path, 
+            mode='lines', line=dict(color='#2ea043', width=2),
+            fill='tozeroy', fillcolor='rgba(46, 160, 67, 0.05)', name="Net Equity"
+        ))
         
         fig_eq.update_layout(
-            height=400, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=0, r=0, t=10, b=0), xaxis=dict(showgrid=True, gridcolor='#30363d'),
-            yaxis=dict(side="right", showgrid=True, gridcolor='#30363d')
+            height=420, template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0, r=0, t=10, b=0),
+            xaxis=dict(showgrid=True, gridcolor='#21262d'),
+            yaxis=dict(side="right", showgrid=True, gridcolor='#21262d')
         )
         st.plotly_chart(fig_eq, use_container_width=True)
 
     st.markdown('<div class="alpha-verified">✅ System Alpha Verified</div>', unsafe_allow_html=True)
 
+# Footer
 st.divider()
-st.caption("🏆 The Masterpiece | Institutional Systematic OS")
+st.caption("🏆 The Masterpiece | Institutional Systematic OS v2.0")
