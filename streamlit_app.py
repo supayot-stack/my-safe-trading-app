@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# --- 1. PRO UI CONFIG ( Institutional Style ) ---
+# --- 1. PRO UI CONFIG (Institutional Style) ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
@@ -26,7 +26,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CORE DATA & LOGIC (Your Original Formulas) ---
+# --- 2. CORE DATA & LOGIC ---
 @st.cache_data(ttl=3600) 
 def get_live_fx():
     try:
@@ -39,7 +39,7 @@ LIVE_USDTHB = get_live_fx()
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR"]
+    thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_stocks and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
 
@@ -52,7 +52,6 @@ def fetch_all_data(tickers):
         try:
             df = raw_data.xs(t, axis=1, level=1).copy() if isinstance(raw_data.columns, pd.MultiIndex) else raw_data.copy()
             if len(df) < 200: continue
-            # Formulas
             df['SMA200'] = df['Close'].rolling(200).mean()
             df['SMA50'] = df['Close'].rolling(50).mean()
             delta = df['Close'].diff()
@@ -61,7 +60,6 @@ def fetch_all_data(tickers):
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14).mean()
-            # Trailing SL
             sl_raw = df['Close'] - (df['ATR'] * 2.5)
             tsl = np.zeros(len(df)); tsl[0] = sl_raw.iloc[0]
             for i in range(1, len(df)):
@@ -81,26 +79,22 @@ with st.sidebar:
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = [format_ticker(t) for t in raw_tickers if format_ticker(t)]
 
-# --- 4. CALCULATION ---
+# --- 4. ENGINE ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 for t in final_watchlist:
     if t not in data_dict: continue
     df = data_dict[t]; curr = df.iloc[-1]; prev = df.iloc[-2]; p = curr['Close']
-    
-    # Signal Logic
     sig = "🟢 ACCUMULATE" if (p > curr['SMA200'] and curr['RSI'] > prev['RSI'] and prev['RSI'] < 48) else "⚪ WAIT"
     if curr['RSI'] > 82: sig = "💰 TAKE PROFIT"
     if p < curr['SMA200']: sig = "🔴 RISK OFF"
-
-    # Qty Logic
     is_thai = ".BK" in t
     fx = 1 if is_thai else LIVE_USDTHB
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
     qty = int(((capital * risk_pct/100) / fx) / sl_gap) if not is_thai else int(((capital * risk_pct/100) / sl_gap) // 100) * 100
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty})
 
-# --- 5. MAIN DASHBOARD ---
+# --- 5. DASHBOARD LAYOUT ---
 st.subheader("🏛️ Market Scanner")
 if results:
     st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
@@ -109,13 +103,11 @@ st.divider()
 
 st.subheader("🛡️ Analytics Hub")
 if final_watchlist and final_watchlist[0] in data_dict:
-    # Analytics for the first ticker
     sel_t = final_watchlist[0]
     df_bt = data_dict[sel_t]
     td_df = pd.DataFrame({"Date": df_bt.index, "Equity": capital * (df_bt['Close']/df_bt['Close'].iloc[0])})
     td_df['PnL'] = td_df['Equity'].diff().fillna(0)
 
-    # กราฟ Analytics พร้อมเส้น Grid
     c_mc, c_st, c_eq = st.columns([4, 1.5, 4])
     
     def apply_grid(fig):
@@ -143,5 +135,4 @@ if final_watchlist and final_watchlist[0] in data_dict:
         f_eq = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], line=dict(color='#3fb950', width=2.5), fill='tozeroy', fillcolor='rgba(63, 185, 80, 0.05)'))
         st.plotly_chart(apply_grid(f_eq), use_container_width=True)
 
-# ส่วนที่แก้ปัญหา Error: ลบข้อความขยะท้ายบรรทัดออกให้หมดแล้ว
 st.markdown('<div class="status-bar">✅ System Alpha Verified</div>', unsafe_allow_html=True)
