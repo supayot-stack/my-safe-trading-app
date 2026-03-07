@@ -171,57 +171,93 @@ with t3:
                 save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with t4:
-    st.subheader("🧪 Advanced Analytics")
-    price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
-    if len(price_dict) > 1:
-        corr_df = pd.DataFrame(price_dict).dropna().corr()
-        fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1))
-        fig_corr.update_layout(height=400, template="plotly_dark")
-        st.plotly_chart(fig_corr, use_container_width=True)
+    st.subheader("🧪 Advanced Analytics & Risk Control")
+    col_left, col_right = st.columns([2, 1])
+    
+    with col_left:
+        st.write("### 🔗 Asset Correlation")
+        price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
+        if len(price_dict) > 1:
+            corr_df = pd.DataFrame(price_dict).dropna().corr()
+            fig_corr = go.Figure(data=go.Heatmap(
+                z=corr_df.values, x=corr_df.columns, y=corr_df.columns, 
+                colorscale='RdBu_r', zmin=-1, zmax=1,
+                text=np.round(corr_df.values, 2), texttemplate="%{text}"
+            ))
+            fig_corr.update_layout(height=450, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
+            st.plotly_chart(fig_corr, use_container_width=True)
+        else:
+            st.info("⚠️ เพิ่มหุ้นอย่างน้อย 2 ตัวเพื่อดู Correlation")
+
+    with col_right:
+        st.write("### 🏗️ Future Modules")
+        st.checkbox("Backtesting Engine (RSI Strategy)", disabled=True, value=False)
+        st.checkbox("Sector Rotation Map", disabled=True, value=False)
+        st.checkbox("Fundamental Score (P/E, PEG)", disabled=True, value=False)
+        
+        st.divider()
+        st.write("### 🛡️ Portfolio Health")
+        if st.session_state.my_portfolio:
+            # คำนวณ Total Cash at Risk: (Entry - StopLoss) * Qty
+            total_risk = 0
+            for a, info in st.session_state.my_portfolio.items():
+                match = res_df[res_df['Asset'] == a]
+                if not match.empty:
+                    sl = match.iloc[0]['Stop-Loss']
+                    total_risk += (info['entry'] - sl) * info['qty']
+            
+            st.metric("Total Cash at Risk", f"{max(total_risk, 0):,.2f} THB")
+            risk_ratio = min(max(total_risk / capital, 0), 1.0) if capital > 0 else 0
+            st.progress(risk_ratio)
+            st.caption(f"ความเสี่ยงปัจจุบัน: {risk_ratio*100:.2f}% ของเงินต้น")
 
 with t5:
-    st.markdown("### 📖 Quant Terminal Guide")
-    st.write("1. **Scanner:** หาหุ้นที่มี Regime เป็นสีเขียว")
-    st.write("2. **Money Management:** ปรับ Risk % ใน Sidebar เสมอ")
+    st.markdown("""
+    ### 📖 Quant Terminal Guide
+    1. **Scanner:** ดู "Regime" เพื่อหาหุ้นที่พร้อมวิ่ง (Green = เข้าเกณฑ์สะสม)
+    2. **Deep-Dive:** ตรวจสอบแนวรับ-แนวต้าน และจุด Stop-loss (เส้นประสีแดง)
+    3. **Stop-loss Strategy:** เราใช้ $ATR \times 2.5$ เพื่อให้ราคาหุ้น "หายใจ" ได้ ไม่โดนเขย่าออกก่อนเวลา
+    4. **Safety Check:** หาก Correlation สูงเกินไป ควรพิจารณาเลือกเทรดเพียงตัวเดียวในกลุ่มนั้น
+    """)
 
 with t6:
     st.header("🧠 System Architecture & Quant Logic")
     st.info("คำอธิบายการทำงานเชิงลึกของระบบ Gemini Master Quant v2.1")
     
     c1, c2 = st.columns(2)
-    
     with c1:
         st.markdown("""
-        ### 1. ระบบจัดการข้อมูล (Data Engine)
-        * **Data Fetching:** ดึงข้อมูลย้อนหลัง 2 ปีผ่าน `yfinance` รองรับ Multi-index ป้องกันโครงสร้าง Data พัง
-        * **Ticker Formatting:** ระบบ Auto-suffix สำหรับหุ้นไทย (เช่น PTT -> PTT.BK)
-        * **Persistence:** บันทึกพอร์ตลงไฟล์ JSON ทำให้ข้อมูลไม่หายแม้ปิดโปรแกรม
+        ### 1. ระบบจัดการข้อมูล (Data Engine & Persistence)
+        * **Data Fetching (yf.download):** ดึงข้อมูลย้อนหลัง 2 ปีจาก Yahoo Finance โดยมีการจัดการ Multi-index เพื่อความเสถียร
+        * **Ticker Formatting:** มี Logic พิเศษในการแปลงชื่อหุ้นไทย เช่น พิมพ์ PTT ระบบจะเติม .BK ให้โดยอัตโนมัติ
+        * **JSON Database:** ใช้ไฟล์ `portfolio_data_v2.json` เพื่อบันทึกพอร์ตจำลอง ข้อมูลไม่หายเมื่อเปิด-ปิดใหม่
         
-        ### 2. การคำนวณทาง Quant
-        * **Trend:** ใช้ SMA200 และ SMA50 แยกแยะโครงสร้างราคา
-        * **RSI Wilder's:** คำนวณแบบ Smoothed เพื่อลด Noise หาจังหวะ Pullback
-        * **Volatility Stop-Loss:** ใช้สูตร $$Price - (ATR \\times 2.5)$$ เพื่อให้ราคาหุ้นมีระยะ 'หายใจ' ไม่โดน Stop hunt ง่ายๆ
+        ### 2. การคำนวณ Technical & Quant Indicators
+        * **Trend Identification:** ใช้ SMA200 (ขาขึ้นระยะยาว) และ SMA50 (ระยะกลาง)
+        * **RSI (Wilder's Smoothing):** คำนวณแบบดั้งเดิมที่แม่นยำเพื่อหาจุด Pullback
+        * **Volatility-Based Stop-Loss (ATR):**
+            * ใช้สูตร $Close - (ATR \\times 2.5)$
+            * ช่วยวางจุดตัดขาดทุนในระยะที่ "หุ้นยังหายใจได้" ไม่โดนสะบัดออก (Stop Hunt) ง่ายๆ
         """)
         
     with c2:
         st.markdown("""
-        ### 3. กลยุทธ์ Signal & Regime
-        * **🟢 ACCUMULATE:** ราคา > SMA(50, 200) + RSI ย่อตัว < 45 + Volume Spike > 1.2x
-        * **💰 DISTRIBUTION:** RSI > 80 (Overbought) เตือนแรงขาย
-        * **🔴 BEARISH:** ราคาหลุด SMA200 (Long-term Trend พัง)
+        ### 3. กลยุทธ์การคัดกรอง (Signal & Regime Logic)
+        * **🟢 ACCUMULATE:** ต้องยืนเหนือ SMA(50, 200) + RSI ย่อตัว < 45 + Volume Spike > 1.2x
+        * **💰 DISTRIBUTION:** RSI > 80 เตือนแรงขาย
+        * **🔴 BEARISH:** ราคาหลุด SMA200 คือจบคะแนนพิศวาส
         
-        ### 4. การบริหารหน้าตัก (Position Sizing)
-        * **Risk-Based Sizing:** คำนวณจำนวนหุ้นตามความเสี่ยงที่ยอมรับได้
+        ### 4. ระบบคำนวณขนาดไม้ (Position Sizing)
+        * **Risk-Based Sizing:** คำนวณจำนวนหุ้นตามความเสี่ยงที่ยอมรับได้ (%)
         * **สูตร:** $$Quantity = \\frac{Capital \\times Risk\%}{Price - StopLoss}$$
-        * **ผลลัพธ์:** ไม่ว่าหุ้นผันผวนแค่ไหน ถ้าโดน SL คุณจะขาดทุนเป็นเงินที่คงที่เสมอ
+        * **ประโยชน์:** ไม่ว่าหุ้นจะผันผวนแค่ไหน ถ้าโดน SL คุณจะขาดทุนเป็นเงินที่คงที่เสมอ
         """)
         
     st.divider()
     st.markdown("""
     ### 5. ส่วนแสดงผล (Professional Visuals)
-    * **Candlestick & Subplots:** แยกส่วน Price, RSI, Volume ให้วิเคราะห์ง่าย
-    * **Silver Volume:** ใช้สีเงิน (#c0c0c0) เพื่อความสบายตาและขับให้เส้น SL สีแดงเด่นชัด
-    * **Correlation Heatmap:** ตรวจสอบการกระจุกตัวของความเสี่ยง (ถ้าแดงเข้ม = หุ้นวิ่งเหมือนกันเกินไป)
+    * **Candlestick & Subplots:** แยกกราฟราคา, RSI และ Volume (สีเงิน #c0c0c0) ชัดเจน
+    * **Correlation Heatmap:** ตรวจสอบความสัมพันธ์ของหุ้นในพอร์ต ป้องกันการกระจุกความเสี่ยง
     
     **สรุปภาพรวม:** โค้ดนี้คือ **Decision Support System** ที่ช่วยให้คุณเทรดด้วย "สถิติ" แทน "อารมณ์"
     """)
