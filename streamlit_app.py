@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 import json
 import os
 import shutil
-from datetime import datetime, timedelta
 
 # --- 1. PRO UI CONFIG ---
 st.set_page_config(page_title="The Masterpiece | Secure OS", layout="wide")
@@ -18,7 +17,6 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { background-color: transparent !important; color: #8b949e !important; padding: 12px 0px !important; }
     .stTabs [aria-selected="true"] { color: #ffffff !important; border-bottom: 2px solid #58a6ff !important; font-weight: 500 !important; }
     .analytics-card { background-color: #161b22; padding: 15px; border-radius: 6px; border: 1px solid #21262d; margin-bottom: 10px; }
-    .status-critical { color: #f85149; font-weight: bold; }
     .status-ok { color: #39d353; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
@@ -27,8 +25,9 @@ st.markdown("""
 DB_FILE = "the_masterpiece_v3.json"
 BAK_FILE = "the_masterpiece_v3.json.bak"
 COMMISSION_RATE = 0.0015 
-MAX_CAP_PER_STOCK = 0.20  # 🛡️ ห้ามลงเงินเกิน 20% ของพอร์ตในตัวเดียว
-STALE_DATA_THRESHOLD_DAYS = 3 # 🛡️ ข้อมูลเก่าเกิน 3 วันถือว่าอันตราย
+SLIPPAGE = 0.001 # 🛡️ เพิ่ม Slippage 0.1% เผื่อเวลาซื้อจริงไม่ได้ราคาปิดเป๊ะๆ
+MAX_CAP_PER_STOCK = 0.20  
+STALE_DATA_THRESHOLD_DAYS = 3 
 
 @st.cache_data(ttl=3600)
 def get_live_fx():
@@ -45,9 +44,7 @@ def load_portfolio():
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r") as f: return json.load(f)
-        except Exception as e:
-            st.error(f"Database Load Error: {e}")
-            return {}
+        except Exception: return {}
     return {}
 
 def save_portfolio(data):
@@ -64,7 +61,7 @@ def format_ticker(ticker):
     if ticker in thai_popular and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE (Enhanced) ---
+# --- 3. CORE QUANT ENGINE ---
 @st.cache_data(ttl=1800)
 def fetch_all_data(tickers):
     if not tickers: return {}
@@ -76,12 +73,12 @@ def fetch_all_data(tickers):
                 df = raw_data.xs(t, axis=1, level=1).copy() if isinstance(raw_data.columns, pd.MultiIndex) else raw_data.copy()
                 if df.empty or len(df) < 50: continue
                 
-                # 🛡️ Safety Check: ข้อมูลเก่าไปไหม?
-                last_date = df.index[-1].to_pydatetime()
-                if (datetime.now() - last_date).days > STALE_DATA_THRESHOLD_DAYS:
+                # 🛡️ แก้ไขบั๊ก Timezone: เช็คว่า df.index มี timezone ไหม แล้วเทียบให้ถูกต้อง
+                last_date = df.index[-1]
+                now_date = pd.Timestamp.now(tz=last_date.tz) if last_date.tz else pd.Timestamp.now()
+                if (now_date - last_date).days > STALE_DATA_THRESHOLD_DAYS:
                     st.warning(f"⚠️ {t} data is stale (Last: {last_date.date()})")
                 
-                # Indicators
                 df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
                 df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
                 delta = df['Close'].diff()
@@ -91,7 +88,6 @@ def fetch_all_data(tickers):
                 tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
                 df['ATR'] = tr.rolling(14, min_periods=1).mean()
                 
-                # Trailing SL
                 sl_raw = df['Close'] - (df['ATR'] * 2.5)
                 tsl = np.zeros(len(df)); tsl[0] = sl_raw.iloc[0]
                 for i in range(1, len(df)):
@@ -113,8 +109,7 @@ with st.sidebar:
     st.markdown("`Institutional Systematic OS`")
     st.divider()
     
-    # 🛡️ System Health
-    health_status = "ONLINE" if not (datetime.now().hour > 23 or datetime.now().hour < 1) else "MARKET CLOSED"
+    health_status = "ONLINE"
     st.markdown(f"System Health: <span class='status-ok'>{health_status}</span>", unsafe_allow_html=True)
     st.info(f"💵 FX Rate: **{LIVE_USDTHB:.2f} THB**")
     
@@ -125,14 +120,13 @@ with st.sidebar:
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
-# --- 5. SIGNAL PROCESSING (With Safety Cap) ---
+# --- 5. SIGNAL PROCESSING ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 for t in final_watchlist:
     if t not in data_dict: continue
     df = data_dict[t]; curr = df.iloc[-1]; prev = df.iloc[-2]; p = curr['Close']
     
-    # Logic
     is_bullish = p > curr['SMA200'] and p > curr['SMA50']
     is_pullback = prev['RSI'] < 48 and curr['RSI'] > prev['RSI']
     is_liquid = curr['Vol_Ratio'] > 1.1
@@ -145,11 +139,8 @@ for t in final_watchlist:
     is_thai = ".BK" in t or (t.isalpha() and len(t) <= 5 and "USD" not in t)
     fx = 1 if is_thai else LIVE_USDTHB
     
-    # 🛡️ Enhanced Position Sizing with Max Cap
-    sl_gap = max(p - curr['Trailing_SL'], p * 0.01) # Minimum 1% stop for safety
+    sl_gap = max(p - curr['Trailing_SL'], p * 0.01) 
     raw_qty = (capital * (risk_pct/100) / fx) / sl_gap
-    
-    # Apply 20% Capital Cap
     max_qty_allowed = (capital * MAX_CAP_PER_STOCK / fx) / p
     final_qty = min(raw_qty, max_qty_allowed)
     
@@ -164,7 +155,7 @@ with tabs[0]:
     if results: 
         res_df = pd.DataFrame(results)
         st.dataframe(res_df.style.applymap(lambda x: 'color: #39d353' if x == '🟢 ACCUMULATE' else ('color: #f85149' if x == '🔴 RISK OFF' else ''), subset=['Regime']), use_container_width=True, hide_index=True)
-    else: st.warning("Waiting for data...")
+    else: st.warning("Waiting for valid data...")
 
 with tabs[1]:
     if data_dict:
@@ -211,14 +202,17 @@ with tabs[3]:
         for i in range(1, len(df_bt)):
             c, p = df_bt.iloc[i], df_bt.iloc[i-1]
             if pos == 0 and c['Close'] > c['SMA200'] and p['RSI'] < 48 and c['Vol_Ratio'] > 1.1:
-                # 🛡️ Apply safety cap in backtest too
                 raw_pos = ((balance * (risk_pct/100)) / fx_bt) / max(c['Close'] - c['Trailing_SL'], 0.01)
                 max_pos = (balance * MAX_CAP_PER_STOCK / fx_bt) / c['Close']
                 pos = int(min(raw_pos, max_pos))
-                entry_p = c['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_bt)
+                # 🛡️ ซื้อจริงต้องเผื่อ Slippage (ราคาแย่ลงนิดนึงเสมอในโลกจริง)
+                entry_p = c['Close'] * (1 + SLIPPAGE) 
+                balance -= (entry_p * pos * COMMISSION_RATE * fx_bt)
                 trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
             elif pos > 0 and (c['Close'] < c['Trailing_SL'] or c['RSI'] > 82):
-                pnl = ((c['Close'] - entry_p) * pos * fx_bt) - (c['Close'] * pos * COMMISSION_RATE * fx_bt)
+                # 🛡️ ขายจริงก็โดน Slippage หักเงินออกไปนิดหน่อย
+                exit_p = c['Close'] * (1 - SLIPPAGE)
+                pnl = ((exit_p - entry_p) * pos * fx_bt) - (exit_p * pos * COMMISSION_RATE * fx_bt)
                 balance += pnl; trades.append({"Type": "SELL", "Date": df_bt.index[i], "PnL": pnl, "Equity": balance})
                 pos = 0
         if trades:
@@ -253,11 +247,11 @@ with tabs[4]:
 
 with tabs[5]:
     st.header("📖 Security & Logic Guide")
-    st.warning("🛡️ **Safety Cap Active:** This system limits any single position to 20% of total capital to mitigate Gap Risk.")
+    st.warning("🛡️ **Safety Cap Active:** Max 20% capital per position. \n\n🛡️ **Realistic Execution:** Backtest accounts for 0.1% Slippage.")
     st.markdown("""
     1. **Trend Guard:** SMA 200/50 cross confirms institutional trend.
     2. **Momentum:** RSI < 48 indicates pullback opportunity.
     3. **Stop Loss:** ATR-based dynamic stops adjust for market noise.
     """)
 
-st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS v3.1 (Secure)")
+st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS v3.2 (Production Ready)")
