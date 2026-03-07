@@ -5,33 +5,40 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. PRO UI CONFIG (DEEP BLACK EDITION) ---
+# --- 1. PRO UI CONFIG (ULTRA DARK) ---
 st.set_page_config(page_title="Institutional Quant Terminal", layout="wide")
 st.markdown("""
     <style>
-    /* พื้นหลังดำสนิทแบบจอ Bloomberg */
+    /* พื้นหลังดำสนิทแบบห้องเทรดสถาบัน */
     .stApp { background-color: #000000; color: #ffffff; }
     
-    /* สไตล์ Sidebar และการ์ด */
-    [data-testid="stSidebar"] { background-color: #050505; border-right: 1px solid #1e1e1e; }
+    /* การ์ดสรุปข้อมูล */
     .stat-card { 
         background-color: #0a0a0a; padding: 20px; border-radius: 8px; 
         border: 1px solid #1e1e1e; border-top: 4px solid #007bff;
         margin-bottom: 20px;
     }
+    
+    /* การ์ดพอร์ตโฟลิโอ */
     .portfolio-card {
-        background-color: #080808; padding: 15px; border-radius: 8px;
-        border: 1px solid #1e1e1e; border-left: 5px solid #00ff66;
-        margin-bottom: 10px;
+        background-color: #050505; padding: 15px; border-radius: 8px;
+        border: 1px solid #1e1e1e; margin-bottom: 10px;
+        border-left: 5px solid #00ff66;
+    }
+
+    /* คู่มือการใช้งาน */
+    .guide-card {
+        background-color: #0a0a0a; padding: 25px; border-radius: 10px;
+        border: 1px solid #333; border-left: 5px solid #ffcc00;
+        margin-top: 15px;
     }
     
-    /* ปรับแต่ง Tabs */
-    .stTabs [data-baseweb="tab-list"] { background-color: #000000; }
-    .stTabs [aria-selected="true"] { border-bottom-color: #007bff !important; }
-
-    /* สีสถานะกำไร/ขาดทุน */
+    /* สีสถานะ */
     .profit { color: #00ff66; font-weight: bold; }
     .loss { color: #ff3333; font-weight: bold; }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] { background-color: #050505; border-right: 1px solid #1e1e1e; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -39,6 +46,7 @@ st.markdown("""
 @st.cache_data(ttl=3600)
 def get_institutional_data(ticker):
     try:
+        # Smart Thai logic
         if ticker.isalpha() and len(ticker) <= 5 and ticker.isupper():
             thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF"]
             if ticker in thai_list: ticker += ".BK"
@@ -47,6 +55,7 @@ def get_institutional_data(ticker):
         if df.empty or len(df) < 200: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
 
+        # Indicators
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
         
@@ -55,15 +64,10 @@ def get_institutional_data(ticker):
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
 
-        tr = pd.concat([
-            df['High'] - df['Low'],
-            abs(df['High'] - df['Close'].shift()),
-            abs(df['Low'] - df['Close'].shift())
-        ], axis=1).max(axis=1)
+        # ATR Risk Calculation
+        tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
-        
         df['SL'] = df['Close'] - (df['ATR'] * 2.5) 
-        df['TP'] = df['Close'] + (df['ATR'] * 5.0) 
         df['Vol_Ratio'] = df['Volume'] / (df['Volume'].rolling(20).mean() + 1e-9)
 
         return df.dropna()
@@ -84,46 +88,12 @@ with st.sidebar:
 results = []
 data_dict = {}
 if final_watchlist:
-    for ticker in final_watchlist:
-        df = get_institutional_data(ticker)
-        if df is not None:
-            data_dict[ticker] = df
-            l = df.iloc[-1]
-            p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
-            
-            if p > s200 and p > s50 and r < 45 and vr > 1.2: signal = "🟢 ACCUMULATE"
-            elif r > 75: signal = "💰 DISTRIBUTION"
-            elif p < s200: signal = "🔴 BEARISH REGIME"
-            else: signal = "⚪ NEUTRAL"
-
-            risk_cash = equity * (max_risk / 100)
-            sl_gap = p - l['SL']
-            qty = int(risk_cash / sl_gap) if sl_gap > 0 else 0
-            results.append({
-                "Asset": ticker, "Price": round(p, 2), "Regime": signal,
-                "RSI": round(r, 1), "Vol-Force": f"{vr:.2f}x",
-                "Target Qty": f"{qty:,}", "Notional (THB)": f"{(qty*p):,.0f}",
-                "Stop-Loss": round(l['SL'], 2)
-            })
-
-# --- 5. MAIN TERMINAL ---
-t1, t2, t3, t4 = st.tabs(["🏛 Scanner", "📈 Charts", "💼 Portfolio", "📖 Guide"])
-
-with t1:
-    st.subheader("🏛 Institutional Order Flow")
-    if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Equity", f"{equity:,.0f} ฿")
-        c2.metric("Risk Budget", f"{(equity*max_risk/100):,.0f} ฿")
-        c3.metric("Scanner Active", len(results))
-
-with t2:
-    if data_dict:
-        sel = st.selectbox("Analyze Asset:", list(data_dict.keys()))
-        df_p = data_dict[sel]
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='SL Line', line=dict(color='red', dash='dot')), row=1, col=1)
-        fig.add_trace(go.Bar(x=df_p.index
+    with st.spinner('Scanning Markets...'):
+        for t in final_watchlist:
+            df = get_institutional_data(t)
+            if df is not None:
+                data_dict[t] = df
+                l = df.iloc[-1]
+                p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
+                
+                if p > s200 and r < 45 and vr > 1.2:
