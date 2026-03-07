@@ -30,7 +30,6 @@ with tab2:
     
     > **สรุป:** ยิ่งหุ้นซิ่ง จุดหนีจะยิ่งลึก และจำนวนหุ้นจะยิ่งน้อยลง เพื่อรักษาเงินต้น 1% ของพอร์ตไว้อย่างเคร่งครัด
     """)
-    
 
 with tab3:
     st.header("⚙️ ระบบภายใน Version 2.0 (ATR Enabled)")
@@ -58,7 +57,7 @@ with tab1:
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
 
-    # --- 4. ฟังก์ชันดึงข้อมูล (เพิ่มการคำนวณ ATR) ---
+    # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + ATR Calculations) ---
     def get_data(ticker, interval, data_period):
         try:
             thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
@@ -117,44 +116,4 @@ with tab1:
 
         if results:
             res_df = pd.DataFrame(results)
-            priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1, "⚪ Wait": 2, "🔴 EXIT/AVOID": 3}
-            res_df['sort'] = res_df['Signal'].map(priority)
-            res_df = res_df.sort_values('sort').drop(columns=['sort'])
-            st.subheader("🎯 สรุปสัญญาณและ Dynamic Stop Loss")
-            st.dataframe(res_df, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # --- 6. รายตัว ---
-    col1, col2 = st.columns([0.6, 0.4])
-    if results:
-        with col1:
-            selected_plot = st.selectbox("🔍 วิเคราะห์กราฟละเอียด:", [r['Ticker'] for r in results])
-            df_plot = get_data(selected_plot, "1d", "2y")
-            if df_plot is not None:
-                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-                fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
-                fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], name='Volume', marker_color='#4A4A4A', opacity=0.6), row=1, col=1)
-                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
-                fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            st.markdown("### 🛠️ การบริหารหน้าตัก (ATR Based)")
-            target_data = next(item for item in results if item["Ticker"] == selected_plot)
-            st.markdown(f"""
-            <div class="risk-box">
-                <h4>Dynamic Plan: {selected_plot}</h4>
-                <ul>
-                    <li><b>ATR (ความผันผวน):</b> {target_data['ATR']}</li>
-                    <li><b>จำนวนหุ้นที่แนะนำ:</b> {target_data['Qty']:,} หุ้น</li>
-                    <li><b>จุดหนี (2x ATR):</b> {target_data['StopLoss']}</li>
-                    <li><b>เป้ากำไร (3x ATR):</b> {target_data['Target']}</li>
-                    <li><b>ความเสียหายหากแพ้:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("หมายเหตุ: ระยะ Stop Loss จะปรับเปลี่ยนทุกวันตามความผันผวนของราคา")
-
-if st.button("🔄 อัปเดตข้อมูล"): st.rerun()
+            priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1,
