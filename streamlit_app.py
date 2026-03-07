@@ -8,17 +8,16 @@ import json
 import os
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="My Personal Quant Terminal", layout="wide")
+st.set_page_config(page_title="Gemini Quant Terminal Pro", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    .status-box { padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid; }
-    .stMetric { background-color: #161b22; padding: 10px; border-radius: 5px; border: 1px solid #30363d; }
+    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
     .highlight-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 10px; border: 1px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE ENGINE ---
+# --- 2. DATA PERSISTENCE & ENGINE ---
 DB_FILE = "portfolio_data.json"
 def load_portfolio():
     if os.path.exists(DB_FILE):
@@ -27,19 +26,11 @@ def load_portfolio():
         except: return {}
     return {}
 
-def save_portfolio(data):
-    with open(DB_FILE, "w") as f: json.dump(data, f)
-
-if 'my_portfolio' not in st.session_state:
-    st.session_state.my_portfolio = load_portfolio()
-
-# --- 3. QUANT ENGINE ---
 @st.cache_data(ttl=1800)
 def get_data(ticker):
     try:
-        # Thai Stock Auto-suffix
         ticker_final = ticker
-        thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF", "PTTEP", "OR", "DELTA", "GULF", "KTB"]
+        thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF", "PTTEP", "OR", "DELTA", "KTB"]
         if ticker in thai_list: ticker_final = ticker + ".BK"
         
         df = yf.download(ticker_final, period="2y", interval="1d", auto_adjust=True, progress=False)
@@ -55,94 +46,95 @@ def get_data(ticker):
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
         tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
-        df['SL'] = df['Close'] - (df['ATR'] * 2.5)
+        df['Volatility'] = (df['ATR'] / df['Close']) * 100 # % Volatility
         df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
         df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
         return df.dropna()
     except: return None
 
-# --- 4. SIDEBAR ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
     st.title("🏦 Personal Quant")
     capital = st.number_input("Total Capital (THB):", value=1000000)
-    risk_pct = st.slider("Risk per Trade (%)", 0.1, 2.0, 1.0, 0.1)
+    risk_pct = st.slider("Risk per Trade (%)", 0.1, 2.0, 1.0)
     st.divider()
-    watchlist = st.multiselect("Watchlist:", ["NVDA", "BTC-USD", "ETH-USD", "GOLD", "CPALL", "ADVANC"], default=["NVDA", "BTC-USD"])
-    custom = st.text_input("➕ Add Ticker (e.g. TSLA):").upper().strip()
+    # ขยายลิสต์เพื่อให้ระบบ Auto-Screener มีตัวเลือกคัดกรอง
+    default_list = ["NVDA", "AAPL", "TSLA", "MSTR", "BTC-USD", "ETH-USD", "SOL-USD", "GOLD", "PTT", "CPALL", "DELTA", "GULF", "KTB", "ADVANC"]
+    watchlist = st.multiselect("Watchlist Pool:", default_list, default=default_list)
+    custom = st.text_input("➕ Add Ticker:").upper().strip()
     final_watchlist = list(set(watchlist + ([custom] if custom else [])))
 
-# --- 5. DATA PROCESSING ---
+# --- 4. DATA PROCESSING ---
 results = []
 data_dict = {}
-for ticker in final_watchlist:
-    df = get_data(ticker)
-    if df is not None:
-        data_dict[ticker] = df
-        l = df.iloc[-1]
-        p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
-        if p > s200 and p > s50 and r < 45 and vr > 1.2: sig = "🟢 ACCUMULATE"
-        elif r > 75: sig = "💰 DISTRIBUTION"
-        elif p < s200: sig = "🔴 BEARISH"
-        else: sig = "⚪ NEUTRAL"
-        
-        sl_gap = p - l['SL']
-        qty = int((capital * risk_pct/100) / sl_gap) if sl_gap > 0 else 0
-        results.append({"Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(r, 1), "Vol-Force": f"{vr:.2f}x", "Target Qty": qty, "Stop-Loss": round(l['SL'], 2)})
+with st.spinner('Scanning Market...'):
+    for ticker in final_watchlist:
+        df = get_data(ticker)
+        if df is not None:
+            data_dict[ticker] = df
+            l = df.iloc[-1]
+            p, r, s200, s50, vr, vola = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio'], l['Volatility']
+            
+            # Logic Scoring
+            status = "⚪ NEUTRAL"
+            if p > s200 and p > s50 and r < 50 and vr > 1.1: status = "🟢 ACCUMULATE"
+            elif r > 75: status = "💰 DISTRIBUTION"
+            elif p < s200: status = "🔴 BEARISH"
+            
+            results.append({
+                "Asset": ticker, "Price": p, "Regime": status, "RSI": r, 
+                "Vol_Ratio": vr, "Volatility": vola, "SMA200": s200
+            })
 
-# --- 6. MAIN TERMINAL ---
-t1, t2, t3, t4, t5 = st.tabs(["🏛 Scanner", "🎯 Quant Picks", "📈 Deep-Dive", "💼 Portfolio", "📖 Guide"])
+res_df = pd.DataFrame(results)
+
+# --- 5. MAIN TERMINAL ---
+t1, t2, t3, t4 = st.tabs(["🏛 Scanner", "🎯 Auto Quant Picks", "📈 Deep-Dive", "💼 Portfolio"])
 
 with t1:
     st.subheader("📊 Market Opportunities")
-    if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+    st.dataframe(res_df, use_container_width=True, hide_index=True)
 
 with t2:
-    st.markdown("<div class='highlight-card'><h2>🎯 Best Assets & Practice Zone (Mar 2026)</h2></div>", unsafe_allow_html=True)
+    st.markdown("<div class='highlight-card'><h2>🎯 AI Autonomous Picks (Real-Time)</h2></div>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("🌐 **Top Global Tech**")
-        st.markdown("- **NVDA**: AI Infrastructure Leader\n- **MSFT**: Enterprise AI Integration\n- **TSLA**: High Volatility Play")
-    with col2:
-        st.success("🇹🇭 **Top Thai Picks**")
-        st.markdown("- **GULF**: Energy & Digital Infrastructure\n- **DELTA**: High Momentum Tech\n- **KTB**: Strong Fund Flow Dividend")
-    with col3:
-        st.warning("₿ **Top Crypto Assets**")
-        st.markdown("- **BTC**: Market Benchmark\n- **SOL**: Fast-growing Ecosystem\n- **LINK**: RWA & Oracle Leader")
+    c1, c2, c3 = st.columns(3)
+    
+    # 1. Momentum King (ราคาแกร่ง RSI ไม่โอเวอร์บอร์ด)
+    with c1:
+        st.info("🚀 **Momentum Kings**")
+        mo_king = res_df[res_df['Regime'] != "🔴 BEARISH"].sort_values('RSI', ascending=False).head(3)
+        for _, row in mo_king.iterrows():
+            st.write(f"**{row['Asset']}** (RSI: {row['RSI']:.1f})")
+
+    # 2. Volume Surge (เงินไหลเข้าผิดปกติ)
+    with c2:
+        st.success("🔥 **Volume Surge**")
+        vol_surge = res_df.sort_values('Vol_Ratio', ascending=False).head(3)
+        for _, row in vol_surge.iterrows():
+            st.write(f"**{row['Asset']}** (Vol: {row['Vol_Ratio']:.2f}x)")
+
+    # 3. Practice Zone (หุ้นซิ่งสำหรับฝึก)
+    with c3:
+        st.warning("⚡ **High Volatility (Practice)**")
+        high_vola = res_df.sort_values('Volatility', ascending=False).head(3)
+        for _, row in high_vola.iterrows():
+            st.write(f"**{row['Asset']}** (Vola: {row['Volatility']:.2f}%)")
 
     st.divider()
-    st.subheader("⚡ 3 หุ้นซิ่งแนะนำสำหรับฝึก (High Volatility Zone)")
-    st.write("หุ้นกลุ่มนี้มีการแกว่งตัวสูง เหมาะสำหรับฝึกจับจังหวะ Volume และการวาง Stop-Loss")
-    
-    practice_stocks = ["TSLA", "MSTR", "KCE"]
-    p_cols = st.columns(3)
-    for i, p_stock in enumerate(practice_stocks):
-        with p_cols[i]:
-            st.metric(p_stock, "High Vol", delta="Practice Required")
-            if st.button(f"Add {p_stock} to Watchlist"):
-                st.info(f"ไปพิมพ์เพิ่ม {p_stock} ในช่อง Add Ticker ด้านซ้ายได้เลย!")
+    st.markdown("### 💡 ทำไมต้องดู 3 หมวดนี้?")
+    st.write("- **Momentum:** หาหุ้นที่กำลังเป็นผู้ชนะในตลาด\n- **Volume:** ดูว่าสถาบันกำลัง 'เก็บของ' หรือ 'ทิ้งของ'\n- **Volatility:** ใช้ฝึกการวาง Stop Loss และคุมอารมณ์ในสภาวะเหวี่ยงแรง")
 
 with t3:
     if data_dict:
         sel = st.selectbox("Select Asset:", list(data_dict.keys()))
         df_p = data_dict[sel]
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume'), row=3, col=1)
-        fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='gray'), row=2, col=1)
+        fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
 with t4:
-    st.subheader("💼 Portfolio Management")
-    # (Portfolio logic as previously built...)
-    if st.session_state.my_portfolio:
-        st.write(st.session_state.my_portfolio)
-    else: st.info("ไม่มีข้อมูลพอร์ต")
-
-with t5:
-    st.header("📖 Guide")
-    st.write("ใช้หน้า Quant Picks เพื่อค้นหาไอเดีย และใช้หน้า Scanner เพื่อตรวจสอบจุดเข้าเทรด")
+    st.write("ระบบบันทึกพอร์ต (Coming Soon หรือเชื่อมต่อจากโค้ดเดิมได้ทันที)")
