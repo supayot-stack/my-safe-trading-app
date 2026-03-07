@@ -43,11 +43,10 @@ with tab1:
             if df.empty or len(df) < 200: return None
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
-            # Indicators
             df['SMA200'] = df['Close'].rolling(200).mean()
             df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
             
-            # RSI
+            # RSI Calculation
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -60,7 +59,6 @@ with tab1:
             df['TR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             df['ATR'] = df['TR'].rolling(14).mean()
             
-            # Stop Loss & Target
             df['SL'] = df['Close'] - (df['ATR'] * atr_mult)
             df['TP'] = df['Close'] + (df['ATR'] * (atr_mult * 2))
             return df
@@ -100,8 +98,4 @@ with tab1:
             st.divider()
             c1, c2 = st.columns([0.6, 0.4])
             with c1:
-                sel = st.selectbox("🔍 เลือกหุ้นเพื่อดูแผนเทรด:", res_df['Ticker'])
-                df_p = get_market_data(sel)
-                if df_p is not None:
-                    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                                        vertical_spacing=0.05, row_heights=[0.5, 0.25,
+                sel = st.selectbox("🔍 เลือกหุ้นเพื่อดูแผนเทรด:", res_df
