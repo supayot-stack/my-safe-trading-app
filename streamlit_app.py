@@ -8,13 +8,13 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG ---
+# --- 1. PRO UI CONFIG (ปรับแต่ง Tabs ให้เหมือนในรูปที่สุด) ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0d1117; color: #e1e4e8; }
     
-    /* Tabs Styling */
+    /* ปรับแต่ง Tabs ให้ดู Clean และเป็น Flat Design แบบในรูป */
     .stTabs [data-baseweb="tab-list"] {
         gap: 15px;
         background-color: transparent;
@@ -24,9 +24,10 @@ st.markdown("""
         background-color: transparent !important;
         border: none !important;
         color: #8b949e !important;
-        padding: 12px 10px !important;
+        padding: 12px 0px !important;
         font-size: 15px !important;
     }
+    /* เมื่อเลือก Tab: ใช้เส้นใต้สีเขียว/ขาว และเปลี่ยนสีตัวอักษร */
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;
         background-color: transparent !important;
@@ -34,7 +35,7 @@ st.markdown("""
         font-weight: 500 !important;
     }
     
-    /* Analytics Card Styling */
+    /* สไตล์สำหรับ Metric Card ในหน้า Analytics (ปรับให้เป็นกล่องสีเทาเรียบๆ แบบในรูป) */
     .analytics-card {
         background-color: #161b22; 
         padding: 15px; 
@@ -46,7 +47,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE & FX ---
+# --- 2. DATA PERSISTENCE & LIVE FX ---
 DB_FILE = "the_masterpiece_v3.json"
 BAK_FILE = "the_masterpiece_v3.json.bak"
 COMMISSION_RATE = 0.0015 
@@ -149,6 +150,7 @@ for t in final_watchlist:
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
 
 # --- 6. MAIN DISPLAY ---
+# ใส่ Icon หน้า Tab ให้เหมือนในรูปที่สุด
 tabs = st.tabs(["🏛 Scanner", "📉 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
 
 with tabs[0]:
@@ -217,22 +219,24 @@ with tabs[3]:
             st.metric("Net Terminal Value", f"{balance:,.2f} THB")
             st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
 
-# --- หน้า ANALYTICS HUB ปรับแก้ตามรูป ---
+# --- หน้า ANALYTICS HUB ปรับแก้ให้เหมือนรูปที่สุด ---
 with tabs[4]:
     if 'td_df' in locals() and not td_df.empty:
+        # แบ่งเป็น 3 คอลัมน์สมบูรณ์แบบ [1.2, 0.6, 1.2]
         col_left, col_mid, col_right = st.columns([1.2, 0.6, 1.2], gap="large")
         
         with col_left:
             st.markdown("##### 🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
             fig_mc = go.Figure()
+            # ตกแต่งสไตล์กราฟ Monte Carlo ให้ดูหนาแน่นแบบในรูป
             for s in sims:
-                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.15, showlegend=False))
+                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.12, showlegend=False))
             fig_mc.update_layout(
                 height=450, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(title="Number of Trades", gridcolor='#21262d'),
-                yaxis=dict(title="Portfolio Value (THB)", gridcolor='#21262d')
+                xaxis_title="Number of Trades", yaxis_title="Portfolio Value (THB)",
+                xaxis=dict(gridcolor='#21262d'), yaxis=dict(gridcolor='#21262d')
             )
             st.plotly_chart(fig_mc, use_container_width=True)
 
@@ -242,49 +246,48 @@ with tabs[4]:
             avg_pnl = td_df['PnL'].mean()
             max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
 
+            # สร้าง Metric Cards ให้เป็นกล่องสีเทาเรียบๆ แบบในรูป
             st.markdown(f"""
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 35px;">
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 30px;">
                     <div class="analytics-card">
                         <p style="color: #8b949e; margin: 0; font-size: 13px;">Win Rate</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{win_r:.1f}%</h2>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{win_r:.1f}%</h2>
                     </div>
                     <div class="analytics-card">
                         <p style="color: #8b949e; margin: 0; font-size: 13px;">Profit Factor</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{pf:.2f}</h2>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{pf:.2f}</h2>
                     </div>
                     <div class="analytics-card">
                         <p style="color: #8b949e; margin: 0; font-size: 13px;">Avg Trade P/L</p>
-                        <h2 style="color: #39d353; margin: 0; font-size: 26px;">{avg_pnl:,.0f} <span style="font-size: 14px; color:#e1e4e8">THB</span></h2>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{avg_pnl:,.0f} <span style="font-size: 14px; color:#e1e4e8">THB</span></h2>
                     </div>
-                    <div class="analytics-card" style="border-left: 3px solid #f85149;">
+                    <div class="analytics-card" style="border-left-color: #f85149;">
                         <p style="color: #8b949e; margin: 0; font-size: 13px;">Max Drawdown</p>
-                        <h2 style="color: #f85149; margin: 0; font-size: 26px;">{max_dd:.1f}%</h2>
+                        <h2 style="color: #f85149; margin: 0; font-size: 24px;">{max_dd:.1f}%</h2>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
         with col_right:
             st.markdown("##### 📈 Equity Curve")
+            # แสดง Final Balance ด้านบนกราฟ
             final_val = td_df['Equity'].iloc[-1]
-            st.markdown(f"""
-                <div style="margin-bottom: 10px;">
-                    <p style="color: #8b949e; margin: 0; font-size: 14px;">Final Balance (Net)</p>
-                    <h3 style="color: #39d353; margin: 0;">{final_val:,.2f} THB</h3>
-                </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown(f"**Final Balance (Net)**: <span style='color:#2ea043; font-size: 18px;'>{final_val:,.2f} THB</span>", unsafe_allow_html=True)
             fig_eq = go.Figure()
+            # ตกแต่งกราฟ Equity Curve ให้มี Fill สีเขียวอ่อนๆ เลียนแบบในรูป
             fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
-                                     line=dict(color='#39d353', width=2), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.1)'))
+                                     line=dict(color='#39d353', width=1.5), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.08)'))
             fig_eq.update_layout(
                 height=400, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Date", yaxis_title="Portfolio Value (THB)",
                 xaxis=dict(gridcolor='#21262d'), yaxis=dict(gridcolor='#21262d')
             )
             st.plotly_chart(fig_eq, use_container_width=True)
 
+        # แถบ Status ด้านล่างสุด
         st.markdown("""
-            <div style="background-color: #161b22; padding: 12px; border-radius: 6px; text-align: center; border: 1px solid #21262d; margin-top: 25px;">
+            <div style="background-color: #161b22; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #21262d; margin-top: 20px;">
                 <span style="color: #39d353; font-weight: bold;">✅ System Alpha Verified</span>
             </div>
         """, unsafe_allow_html=True)
