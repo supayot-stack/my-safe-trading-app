@@ -56,12 +56,11 @@ def format_ticker(ticker):
     if ticker in thai_stocks and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE (Improved Stability) ---
+# --- 3. CORE QUANT ENGINE ---
 @st.cache_data(ttl=1800)
 def fetch_all_data(tickers):
     if not tickers: return {}
     try:
-        # ดึงข้อมูลให้ครอบคลุม 3 ปี
         raw_data = yf.download(tickers, period="3y", interval="1d", auto_adjust=True, progress=False)
         processed = {}
         for t in tickers:
@@ -69,11 +68,8 @@ def fetch_all_data(tickers):
                 try: df = raw_data.xs(t, axis=1, level=1).copy()
                 except: continue
             else: df = raw_data.copy()
-            
-            # ตรวจสอบข้อมูลขั้นต่ำที่ต้องใช้ (อย่างน้อย 30 วันเพื่อ RSI/ATR)
             if df.empty or len(df) < 30: continue
             
-            # Indicators - เพิ่ม min_periods=1 เพื่อให้คำนวณได้แม้ข้อมูลช่วงแรกไม่ครบ
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -83,7 +79,6 @@ def fetch_all_data(tickers):
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14, min_periods=1).mean()
             
-            # Trailing Stop Logic
             df['Base_SL'] = df['Close'] - (df['ATR'] * 2.5)
             sl_v, cl_v = df['Base_SL'].values, df['Close'].values
             trailing_sl = np.zeros_like(sl_v)
@@ -93,8 +88,7 @@ def fetch_all_data(tickers):
             df['Trailing_SL'] = trailing_sl
             df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
-            
-            processed[t] = df.ffill().bfill() # ใช้ bfill เพื่อไม่ให้ค่าแรกๆ เป็น NaN
+            processed[t] = df.ffill().bfill()
         return processed
     except Exception as e:
         st.error(f"Fetch Error: {e}"); return {}
@@ -120,8 +114,6 @@ for ticker in final_watchlist:
     df = data_dict[ticker]
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
-    
-    # Logic Decision
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
     
@@ -133,24 +125,18 @@ for ticker in final_watchlist:
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
     fx_m = LIVE_USDTHB if not ticker.endswith(".BK") else 1
-    
-    # คำนวณ Qty ให้แม่นยำขึ้น
-    raw_qty = (risk_cash_thb / fx_m) / sl_gap
-    qty = int(raw_qty) if fx_m > 1 else int(raw_qty // 100) * 100
-
+    qty = int((risk_cash_thb / fx_m) / sl_gap) if fx_m > 1 else int(((risk_cash_thb / fx_m) / sl_gap) // 100) * 100
     results.append({"Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), 
                     "Target Qty": qty, "Trailing SL": round(curr['Trailing_SL'], 2), "Currency": "USD" if fx_m > 1 else "THB"})
 res_df = pd.DataFrame(results)
 
 # --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics (Tap 6)", "📖 Guide & Logic (Tap 7)"])
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Advanced Analytics", "📖 Guide & Logic"])
 
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
-    if not res_df.empty: 
-        st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: 
-        st.warning("กรุณาตรวจสอบชื่อ Ticker หรือรอข้อมูลโหลดสักครู่")
+    if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
+    else: st.warning("ระบุ Ticker ใน Sidebar")
 
 with tabs[1]:
     if data_dict:
@@ -175,15 +161,8 @@ with tabs[2]:
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio); st.rerun()
     if st.session_state.my_portfolio:
-        p_list = []
-        for a, i in st.session_state.my_portfolio.items():
-            if a in data_dict:
-                curr_p = data_dict[a]['Close'].iloc[-1]
-                sl_p = data_dict[a]['Trailing_SL'].iloc[-1]
-                p_list.append({"Asset": a, "Cost": i['entry'], "Price": curr_p, "Qty": i['qty'], 
-                               "P/L": f"{(curr_p - i['entry']) * i['qty']:,.2f}", 
-                               "Status": "✅ HOLD" if curr_p > sl_p else "🚨 EXIT"})
-        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+        p_data = [{"Asset": a, "Cost": i['entry'], "Price": data_dict[a]['Close'].iloc[-1], "Qty": i['qty'], "P/L": f"{(data_dict[a]['Close'].iloc[-1] - i['entry']) * i['qty']:,.2f}", "Status": "✅ HOLD" if data_dict[a]['Close'].iloc[-1] > data_dict[a]['Trailing_SL'].iloc[-1] else "🚨 EXIT"} for a, i in st.session_state.my_portfolio.items() if a in data_dict]
+        st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
         if st.button("🗑️ Reset All"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
@@ -195,8 +174,7 @@ with tabs[3]:
         for i in range(1, len(df_bt)):
             c_bt, p_bt = df_bt.iloc[i], df_bt.iloc[i-1]
             if pos == 0 and c_bt['Close'] > c_bt['SMA200'] and p_bt['RSI'] < 45 and c_bt['Vol_Ratio'] > 1.1:
-                sl_dist = max(c_bt['Close'] - c_bt['Trailing_SL'], 0.01)
-                pos = int(((balance * (risk_pct/100)) / fx_mult) / sl_dist)
+                pos = int(((balance * (risk_pct/100)) / fx_mult) / max(c_bt['Close'] - c_bt['Trailing_SL'], 0.01))
                 entry_p = c_bt['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_mult)
                 trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
             elif pos > 0 and (c_bt['Close'] < c_bt['Trailing_SL'] or c_bt['RSI'] > 80):
@@ -210,7 +188,7 @@ with tabs[3]:
                 st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#00ff00'))), use_container_width=True)
 
 with tabs[4]:
-    st.header("🛡️ Tap 6: Advanced Analytics")
+    st.header("🛡️ Advanced Analytics")
     if 'td_df' in locals() and not td_df.empty:
         col_m1, col_m2 = st.columns([2, 1])
         with col_m1:
@@ -226,14 +204,14 @@ with tabs[4]:
     else: st.info("Run Backtest first")
 
 with tabs[5]:
-    st.header("📖 Tap 7: Logic & Manual")
+    st.header("📖 Guide & Logic")
     st.latex(r"Position\,Size = \frac{Capital \times Risk\%}{Entry - StopLoss}")
     st.markdown("""
     ### 🛡️ ระบบตัดสินใจ (Decision Logic)
-    1. **Trend Filter:** ต้องเป็นขาขึ้น (Price > SMA200)
-    2. **Pullback Entry:** ซื้อตอนย่อ (RSI < 45) เพื่อความคุ้มค่า (Risk/Reward)
-    3. **Volume Confirmation:** ต้องมีแรงซื้อมากกว่าค่าเฉลี่ย (Vol Ratio > 1.1)
-    4. **Trailing Exit:** ขายเมื่อหลุดจุดคัดลอกกำไรที่ขยับตามราคาหุ้น (Lock Profit)
+    * **Trend Filter:** เข้าเฉพาะตอนราคาอยู่เหนือ SMA200 (ขาขึ้นชัดเจน)
+    * **Pullback Entry:** หาจังหวะย่อซื้อเมื่อ RSI ต่ำกว่า 45 เพื่อลดความเสี่ยง
+    * **Risk Management:** คำนวณจำนวนหุ้นให้สัมพันธ์กับจุด Stop Loss เสมอ
+    * **Automatic Exit:** ล็อกกำไรด้วย Trailing Stop ที่ขยับขึ้นตามความผันผวน (ATR)
     """)
 
-st.divider(); st.caption("Ultimate Quant Terminal | Systematic Execution Engine")
+st.divider(); st.caption("Ultimate Quant Terminal | Professional Systematic Trading Engine")
