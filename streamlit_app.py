@@ -31,5 +31,49 @@ def get_data(ticker, interval="1d", data_period="2y"):
         if ticker in thai_list:
             ticker += ".BK"
         
-        # ดึงข้อมูล
-        df = yf.download(
+        # ดึงข้อมูล (เขียนให้อยู่ในบรรทัดเดียวเพื่อป้องกัน Syntax Error)
+        df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
+        
+        if df.empty:
+            return None
+
+        # แก้ปัญหา Multi-Index (สาเหตุของจอดำ)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
+        # ตรวจสอบคอลัมน์สำคัญ
+        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        if not all(col in df.columns for col in required_cols):
+            return None
+
+        # คำนวณ Indicators
+        df['SMA200'] = df['Close'].rolling(200).mean()
+        
+        # RSI
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+        
+        # Volume & ATR
+        df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
+        df['ATR'] = calculate_atr(df)
+        
+        # Dynamic Risk Management (SL = 2.5x ATR)
+        df['SL'] = df['Close'] - (df['ATR'] * 2.5)
+        df['TP'] = df['Close'] + (df['ATR'] * 5)
+        
+        return df
+    except:
+        return None
+
+# --- 3. ส่วนเมนู (Tabs) ---
+tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ ระบบหลังบ้าน"])
+
+with tab1:
+    st.title("🛡️ Safe Heaven Quant Pro Max")
+    
+    # Sidebar สำหรับการตั้งค่า
+    st.sidebar.header("💰 ตั้งค่าพอร์ต")
+    port_size = st.sidebar.number_input("เงินลงทุนทั้งหมด (บาท):", min_value=1000, value=100000)
+    risk_pct = st.sidebar.slider("ความเสี่ยงที่ยอมรับได้
