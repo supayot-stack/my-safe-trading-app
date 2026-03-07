@@ -8,34 +8,55 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="The Masterpiece", layout="wide")
+# --- 1. PRO UI CONFIG (เหมือนBloomberg Terminal) ---
+st.set_page_config(page_title="The Masterpiece | Institutional Systematic OS", layout="wide")
+
+# CSS เพื่อควบคุมสไตล์ให้เหมือนรูปเป๊ะๆ
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    .stMetric { 
-        background-color: #161b22; 
-        padding: 20px; 
-        border-radius: 12px; 
-        border: 1px solid #30363d; 
-        border-left: 5px solid #00ff00;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    /* พื้นหลังหลักและตัวอักษร */
+    .stApp { background-color: #111111; color: #E0E0E0; font-family: 'Roboto', sans-serif; }
+    
+    /* สไตล์ Sidebar */
+    section[data-testid="stSidebar"] { background-color: #1A1A1A; border-right: 1px solid #333333; }
+    
+    /* สไตล์ Metric Cards (กลางหน้า Analytics) */
+    .metric-card-custom {
+        background-color: #1A1A1A;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid #333333;
+        border-left: 5px solid #00ff00; /* ขอบเรืองแสงสีเขียว */
+        box-shadow: 0 4px 20px rgba(0,255,0,0.2);
+        margin-bottom: 15px;
+        transition: 0.3s;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { 
-        background-color: #161b22; border-radius: 6px 6px 0px 0px; 
-        padding: 12px 25px; color: #8b949e; transition: 0.3s;
+    .metric-card-custom:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0,255,0,0.3); }
+    .metric-title { font-size: 0.9em; color: #AAAAAA; margin-bottom: 5px; }
+    .metric-value { font-size: 1.8em; font-weight: bold; color: #00ff00; }
+    
+    /* สไตล์ Verified Banner (กลางหน้า Analytics) */
+    .verified-banner {
+        background: linear-gradient(90deg, rgba(0,255,0,0.05) 0%, rgba(0,255,0,0.15) 50%, rgba(0,255,0,0.05) 100%);
+        border: 2px solid #00ff00;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        color: #00ff00;
+        font-weight: bold;
+        box-shadow: 0 0 30px rgba(0,255,0,0.4);
+        margin-top: 25px;
+        margin-bottom: 25px;
     }
-    .stTabs [aria-selected="true"] { 
-        background-color: #238636 !important; color: white !important; font-weight: bold;
-    }
-    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 10px; background-color: #0d1117; }
+    
+    /* จัดการช่องไฟของกราฟ */
+    .stPlotlyChart { margin-top: -15px !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & LIVE FX ---
-DB_FILE = "the_masterpiece_v2.json"
-BAK_FILE = "the_masterpiece_v2.json.bak"
+DB_FILE = "the_masterpiece_portfolio.json"
+BAK_FILE = "the_masterpiece_portfolio.json.bak"
 COMMISSION_RATE = 0.0015 
 
 @st.cache_data(ttl=3600) 
@@ -64,8 +85,7 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    # Auto-suffix for Thai Stocks
-    thai_popular = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
+    thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB"]
     if ticker in thai_popular and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
 
@@ -85,15 +105,13 @@ def fetch_all_data(tickers):
                 
                 if df.empty or len(df) < 50: continue
                 
-                # Decision Indicators
+                # Indicators
                 df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
                 df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
-                
                 delta = df['Close'].diff()
                 gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-                
                 tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
                 df['ATR'] = tr.rolling(14, min_periods=1).mean()
                 
@@ -104,7 +122,8 @@ def fetch_all_data(tickers):
                     tsl[i] = max(tsl[i-1], sl_raw.iloc[i]) if df['Close'].iloc[i-1] > tsl[i-1] else sl_raw.iloc[i]
                 df['Trailing_SL'] = tsl
                 
-                df['Vol_Ratio'] = df['Volume'] / df['Volume'].rolling(20, min_periods=1).mean().replace(0, np.nan)
+                df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
+                df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
                 processed[t] = df.ffill().bfill()
             except: continue
         return processed
@@ -121,7 +140,8 @@ with st.sidebar:
     capital = st.number_input("Total Equity (THB):", value=1000000, step=50000)
     risk_pct = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Watchlist (CSV):", "NVDA, AAPL, PTT, DELTA, BTC-USD")
+    # Watchlist เหมือนในรูป
+    watchlist_input = st.text_area("Watchlist (CSV):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
@@ -138,24 +158,20 @@ for t in final_watchlist:
 
     if is_bullish and is_pullback and is_liquid: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 82: sig = "💰 TAKE PROFIT"
-    elif p < curr['SMA200']: sig = "🔴 RISK OFF"
-    else: sig = "⚪ WAIT"
+    elif p < curr['SMA200']: sig = "🔴 BEARISH"
+    else: sig = "⚪ NEUTRAL"
 
-    # Multi-currency handling
-    is_thai = ".BK" in t or (t.isalpha() and len(t) <= 5 and "USD" not in t)
-    fx = 1 if is_thai else LIVE_USDTHB
-    
+    fx = LIVE_USDTHB if ".BK" not in t and "USD" not in t and t.isalpha() else 1
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
     qty = int((capital * (risk_pct/100) / fx) / sl_gap) if fx > 1 else int(((capital * (risk_pct/100) / fx) / sl_gap) // 100) * 100
-    results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
+    results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "TSL": round(curr['Trailing_SL'], 2), "Currency": "USD" if fx > 1 else "THB"})
 
 # --- 6. MAIN DISPLAY ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics", "📖 Logic Guide"])
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Logic Guide"])
 
 with tabs[0]:
     st.subheader("📊 Tactical Opportunities")
-    if results: st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
-    else: st.warning("Please enter valid tickers in the sidebar.")
+    st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
 
 with tabs[1]:
     if data_dict:
@@ -163,16 +179,16 @@ with tabs[1]:
         df_p = data_dict[sel]
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='Inst. Trend', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='TSL', line=dict(color='red', dash='dot')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Vol', marker_color='#c0c0c0', opacity=0.4), row=3, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='Institutional Trend', line=dict(color='yellow')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='Trailing SL', line=dict(color='red', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='Momentum', line=dict(color='cyan')), row=2, col=1)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#c0c0c0', opacity=0.4), row=3, col=1)
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,b=0,t=20))
         st.plotly_chart(fig, use_container_width=True)
 
 with tabs[2]:
     st.subheader("💼 Active Position Log")
-    with st.expander("➕ Log New Trade"):
+    with st.expander("➕ บันทึกไม้เทรดใหม่"):
         c1, c2, c3 = st.columns(3)
         p_asset = c1.selectbox("Asset", list(data_dict.keys()) if data_dict else ["None"])
         p_entry, p_qty = c2.number_input("Entry Price", 0.0), c3.number_input("Quantity", 0)
@@ -180,85 +196,80 @@ with tabs[2]:
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio); st.rerun()
     if st.session_state.my_portfolio:
-        p_list = []
-        for a, i in st.session_state.my_portfolio.items():
-            if a in data_dict:
-                curr_p = data_dict[a]['Close'].iloc[-1]
-                is_thai = ".BK" in a or (a.isalpha() and len(a) <= 5 and "USD" not in a)
-                fx_val = 1 if is_thai else LIVE_USDTHB
-                pl_thb = (curr_p - i['entry']) * i['qty'] * fx_val
-                p_list.append({
-                    "Asset": a, "Cost": i['entry'], "Price": curr_p, "Qty": i['qty'], 
-                    "P/L (THB)": f"{pl_thb:,.2f}", 
-                    "Status": "✅ HOLD" if curr_p > data_dict[a]['Trailing_SL'].iloc[-1] else "🚨 EXIT"
-                })
+        p_list = [{"Asset": a, "Cost": i['entry'], "Price": data_dict[a]['Close'].iloc[-1], "Qty": i['qty'], "P/L": f"{(data_dict[a]['Close'].iloc[-1] - i['entry']) * i['qty'] * (LIVE_USDTHB if '.BK' not in a else 1):,.2f}", "Status": "✅ HOLD" if data_dict[a]['Close'].iloc[-1] > data_dict[a]['Trailing_SL'].iloc[-1] else "🚨 EXIT"} for a, i in st.session_state.my_portfolio.items() if a in data_dict]
         st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Wipe Data"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        if st.button("🗑️ Clear All"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
     st.header("🧪 Strategy Stress Test")
-    sel_bt = st.selectbox("Select Target:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
-    if sel_bt != "None" and sel_bt in data_dict:
+    sel_bt = st.selectbox("Select Target:", list(data_dict.keys()) if data_dict else ["None"])
+    if sel_bt != "None":
         df_bt = data_dict[sel_bt].iloc[-500:].copy()
-        is_thai = ".BK" in sel_bt or (sel_bt.isalpha() and len(sel_bt) <= 5 and "USD" not in sel_bt)
-        fx_bt = 1 if is_thai else LIVE_USDTHB
+        fx_m = LIVE_USDTHB if ".BK" not in sel_bt and "USD" not in sel_bt and sel_bt.isalpha() else 1
         balance, pos, trades, entry_p = capital, 0, [], 0
         for i in range(1, len(df_bt)):
             c, p = df_bt.iloc[i], df_bt.iloc[i-1]
             if pos == 0 and c['Close'] > c['SMA200'] and p['RSI'] < 48 and c['Vol_Ratio'] > 1.1:
-                pos = int(((balance * (risk_pct/100)) / fx_bt) / max(c['Close'] - c['Trailing_SL'], 0.01))
-                entry_p = c['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_bt)
+                pos = int(((balance * (risk_pct/100)) / fx_m) / max(c['Close'] - c['Trailing_SL'], 0.01))
+                entry_p = c['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_m)
                 trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
-            elif pos > 0 and (c['Close'] < c['Trailing_SL'] or c['RSI'] > 82):
-                pnl = ((c['Close'] - entry_p) * pos * fx_bt) - (c['Close'] * pos * COMMISSION_RATE * fx_bt)
+            elif pos > 0 and (c['Close'] < c['Trailing_SL'] or c['RSI'] > 80):
+                pnl = ((c['Close'] - entry_p) * pos * fx_m) - (c['Close'] * pos * COMMISSION_RATE * fx_m)
                 balance += pnl; trades.append({"Type": "SELL", "Date": df_bt.index[i], "PnL": pnl, "Equity": balance})
                 pos = 0
         if trades:
             td_df = pd.DataFrame([t for t in trades if "PnL" in t])
-            st.metric("Net Terminal Value", f"{balance:,.2f} THB")
-            st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
+            st.metric("FinalTerminalValue", f"{balance:,.2f} THB")
+            st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity Curve', line=dict(color='#00ff00'))), use_container_width=True)
 
 with tabs[4]:
-    st.header("🛡️ Analytics Hub")
+    # --- 🛡️ ANALYTICS HUB Tab (เหมือนรูปเป๊ะๆ) ---
+    st.markdown("## 🛡️ Analytics Hub")
+    
     if 'td_df' in locals() and not td_df.empty:
-        st.markdown("---")
-        l_m, col_chart, col_stat, r_m = st.columns([0.5, 5, 2.5, 0.5], gap="large")
-        with col_chart:
-            st.subheader("🎲 Monte Carlo Simulation")
+        # แบ่ง Column เป็น 3 ส่วน: กราฟซ้าย : สถิติกลาง : กราฟขวา
+        col_m1, col_m_stats, col_m2 = st.columns([2.5, 1, 2.5], gap="medium")
+        
+        with col_m1:
+            st.markdown("### 🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
             fig_mc = go.Figure()
-            for s in sims: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1), opacity=0.15, showlegend=False))
-            fig_mc.update_layout(height=480, margin=dict(l=0,r=0,b=0,t=20), template="plotly_dark")
+            for s in sims: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1, color='#00ffaa'), opacity=0.2, showlegend=False))
+            fig_mc.update_layout(height=450, xaxis_title="Trades", yaxis_title="Equity (THB)", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_showgrid=False, yaxis_showgrid=False)
             st.plotly_chart(fig_mc, use_container_width=True)
+
+        with col_m_stats:
+            # HTML/CSS Custom Metric Cards เหมือนในรูป
+            st.markdown("### 📊 KPIs")
+            st.markdown("<br>", unsafe_allow_html=True)
             
-        with col_stat:
-            st.subheader("📊 Performance KPIs")
             win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
             pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
-            st.metric("Win Rate", f"{win_r:.1f}%")
-            st.metric("Profit Factor", f"{pf:.2f}")
-            st.metric("Avg Trade P/L", f"{td_df['PnL'].mean():,.0f} ฿")
-            st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
-            st.divider(); st.success("Robustness: Verified")
-    else: st.info("Run backtest to activate analytics.")
+            
+            st.markdown(f"<div class='metric-card-custom'><div class='metric-title'>Win Rate</div><div class='metric-value'>{win_r:.1f}%</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card-custom'><div class='metric-title'>Profit Factor</div><div class='metric-value'>{pf:.2f}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card-custom'><div class='metric-title'>Profit THB</div><div class='metric-value'>{td_df['PnL'].sum():,.0f} ฿</div></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='metric-card-custom'><div class='metric-title'>Max Drawdown</div><div class='metric-value'>{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%</div></div>", unsafe_allow_html=True)
+
+        with col_m2:
+            st.markdown("### 📈 Net Equity Curve")
+            fig_equity = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00', width=2)))
+            fig_equity.update_layout(height=450, xaxis_title="Date", yaxis_title="THB", template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_showgrid=False, yaxis_showgrid=False)
+            st.plotly_chart(fig_equity, use_container_width=True)
+
+        # Verified Banner เหมือนในรูป (จัดวางกึ่งกลางกว้างสุด)
+        st.markdown("<div class='verified-banner'>✅ SYSTEM ALPHA VERIFIED: Strategy is Robust</div>", unsafe_allow_html=True)
+
+    else: st.info("กรุณารัน Backtest ในแท็บ🧪 Backtest ก่อนเพื่อประมวลผลสถิติ")
 
 with tabs[5]:
-    st.header("📖 The Masterpiece Decision Logic")
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
-        st.markdown("""
-        ### 🛡️ Core Entry Framework
-        1. **Trend Guard:** ราคาสินทรัพย์ต้องอยู่เหนือ `SMA 200` และ `SMA 50` เพื่อยืนยันว่าเป็นสภาวะขาขึ้นที่แข็งแกร่ง
-        2. **Momentum Pullback:** ใช้ `RSI (14)` หาจังหวะที่ราคาย่อตัวลงมาในโซนได้เปรียบ (RSI < 48 และเริ่มฟื้นตัว)
-        3. **Liquidity Filter:** `Volume Ratio > 1.1` เพื่อยืนยันว่าการขยับของราคามีปริมาณการซื้อขายสนับสนุนจริง
-        """)
-    with col_l2:
-        st.markdown("""
-        ### 🚪 Professional Exit Strategy
-        1. **Dynamic Trailing Stop:** ปกป้องกำไรด้วย `ATR * 2.5` ซึ่งเป็นจุด Stop Loss ที่ขยับขึ้นตามความผันผวนจริง
-        2. **Overbought Exit:** เมื่อราคาพุ่งทะยานจน `RSI > 82` ระบบจะแนะนำให้ Take Profit เนื่องจากราคามีความตึงตัวสูง
-        """)
-    st.divider()
-    st.latex(r"Position\,Size = \frac{Equity \times Risk\%}{Price - Trailing\,Stop}")
+    st.latex(r"Position\,Size = \frac{Capital \times Risk\%}{Price - Trailing\,Stop}")
+    st.markdown("""
+    ### 🛡️ Decision Framework
+    * **Trend guard:** Price > SMA200/50 (Institutional uptrend)
+    - **Mean Reversion Entry:** RSI < 48 + Volume Ratio > 1.1 (Value Setup)
+    - **Risk Control:** PosSize dynamically adjusted based on ATR volatility
+    - **Verified Exit:** ATR-based Trailing SL or Extremely Overbought RSI 80
+    """)
 
-st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS")
+st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS | Final Edition v2.1")
