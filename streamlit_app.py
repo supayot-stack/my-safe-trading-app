@@ -24,113 +24,158 @@ with tab2:
     ### 🛡️ กลยุทธ์นี้คืออะไร?
     กลยุทธ์นี้เน้นการ **"ซื้อเมื่อย่อในขาขึ้น"** และ **"หนีเมื่อเป็นขาลง"** โดยใช้เครื่องมือหลัก 2 ตัว:
     
-    1. **เส้น SMA 200 (แนวโน้มระยะยาว):** * ถ้าราคา **อยู่เหนือ** เส้นนี้ = ขาขึ้น (ปลอดภัยที่จะเล่น)
+    1. **เส้น SMA 200 (แนวโน้ม):** * ถ้าราคา **อยู่เหนือ** เส้นนี้ = ขาขึ้น (ปลอดภัยที่จะเล่น)
         * ถ้าราคา **อยู่ใต้** เส้นนี้ = ขาลง (อันตราย ห้ามถือ)
     
-    2. **RSI 14 (แรงแกว่ง):** * ใช้ดูว่าหุ้น "ถูก" หรือ "แพง" เกินไปในขณะนั้น
+    2. **RSI 14 (แรงแกว่ง):** * ใช้ดูว่าหุ้น "ถูก" หรือ "แพง" ในขณะนั้น (ต่ำกว่า 40 คือเริ่มถูก / สูงกว่า 75 คือแพงไป)
     """)
-
-    
 
     st.markdown("""
     ---
     ### 🚦 วิธีอ่านสัญญาณ (Trading Signals)
-    * 🟢 **STRONG BUY:** ราคาอยู่เหนือเส้น SMA 200 (ขาขึ้นชัดเจน) แต่ RSI ต่ำกว่า 40 (ราคาเพิ่งย่อตัวลงมา เป็นจุดซื้อที่ได้เปรียบ)
-    * 💰 **TAKE PROFIT:** RSI สูงกว่า 75 แปลว่าราคาขึ้นแรงเกินไปแล้ว มีโอกาสย่อตัวสูง ควรพิจารณาขายทำกำไร
-    * 🔴 **EXIT/AVOID:** ราคาหลุดเส้น SMA 200 ลงมา แปลว่าเปลี่ยนเป็นขาลงแล้ว ให้ขายออกทันทีเพื่อรักษาเงินต้น
-    * ⚪ **WAIT:** สัญญาณยังไม่ชัดเจน ให้ถือเงินสดรอไปก่อน
+    * 🟢 **STRONG BUY:** ราคา > SMA 200 (ขาขึ้น) + RSI < 40 (ย่อตัวลงมาเป็นจุดซื้อที่ได้เปรียบ)
+    * 💰 **PROFIT:** RSI > 75 ราคาขึ้นแรงเกินไปแล้ว มีโอกาสย่อตัว ควรพิจารณาขายทำกำไร
+    * 🔴 **EXIT/AVOID:** ราคา < SMA 200 แปลว่าเป็นขาลง ให้ขายออกทันทีเพื่อรักษาเงินต้น
+    * ⚪ **WAIT:** สัญญาณยังไม่ชัดเจน ให้ถือเงินสดรอ
     
     ---
-    ### ⚙️ การตั้งค่าหน่วยเวลา (Timeframe)
-    * **1 วัน (1d):** สำหรับนักลงทุนระยะกลาง-ยาว (ถือหลักสัปดาห์/เดือน) แม่นยำที่สุด
-    * **1 ชั่วโมง / 5 นาที:** สำหรับนักเก็งกำไรระยะสั้น (Day Trade) สัญญาณจะมาไวแต่มีความเสี่ยงผันผวนสูง
+    ### ⚙️ หน่วยเวลา (Timeframe) กับความหมายของ SMA 200
+    * **1 วัน:** SMA 200 คือแนวโน้ม **ระยะยาว (รายปี)** แม่นยำที่สุดสำหรับนักลงทุน
+    * **1 ชั่วโมง / 15 นาที / 5 นาที:** SMA 200 จะเปลี่ยนเป็นแนวโน้ม **ระยะสั้น** ของช่วงเวลานั้นๆ เหมาะสำหรับนักเก็งกำไร
     """)
 
 with tab1:
     st.title("🛡️ Safe Heaven Quant Scanner")
     
-    # --- ส่วนการจัดการรายชื่อหุ้น (Add/Remove) ---
+    # --- 3. ส่วน Sidebar: การจัดการรายชื่อหุ้น (Asset Management) ---
     st.sidebar.header("🔍 Asset Management")
     
-    # หุ้นแนะนำ (Top 5 / Popular)
+    # รายชื่อแนะนำเริ่มต้น (Top 5)
     default_assets = ["NVDA", "AAPL", "TSLA", "BTC-USD", "SET50.BK"]
     
-    # ส่วนเลือกหุ้นจากรายการหรือลบออก
+    # เลือกหุ้นจากรายการหรือลบออก
     selected_assets = st.sidebar.multiselect(
         "เลือกหุ้นจากรายการแนะนำ:",
-        options=default_assets + ["MSFT", "GOOGL", "ETH-USD", "PTT.BK", "CPALL.BK"],
+        options=list(set(default_assets + ["MSFT", "GOOGL", "ETH-USD", "PTT.BK", "CPALL.BK", "GC=F"])),
         default=default_assets
     )
 
-    # ส่วนพิมพ์เพิ่มเอง (Add Custom Ticker)
-    custom_ticker = st.sidebar.text_input("➕ เพิ่มชื่อหุ้นอื่นๆ (เช่น META, GC=F):").upper()
+    # เพิ่มหุ้นเอง
+    custom_ticker = st.sidebar.text_input("➕ เพิ่มชื่อหุ้นอื่นๆ (เช่น META, OR.BK):").upper().strip()
     
-    # รวมรายชื่อหุ้นทั้งหมด
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list:
         final_list.append(custom_ticker)
 
     st.sidebar.divider()
     
-    # --- Settings ---
-    st.sidebar.header("⏱️ Settings")
-    itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
-    itv = st.sidebar.selectbox("หน่วยเวลา:", list(itv_map.keys()), index=0)
+    # --- 4. ส่วน Sidebar: การตั้งค่าหน่วยเวลาตามจริง (Real-time Settings) ---
+    st.sidebar.header("⏱️ Timeframe Settings")
+    
+    # Mapping หน่วยเวลา และคำอธิบายให้ตรงกับการทำงานจริง
+    timeframe_config = {
+        "1 วัน (Daily)": {
+            "iv": "1d", 
+            "period": "2y", 
+            "desc": "เหมาะสำหรับ: ลงทุนระยะกลาง-ยาว",
+            "note": "SMA 200 = แนวโน้ม 200 วัน (หลัก)"
+        },
+        "1 ชั่วโมง (Hourly)": {
+            "iv": "1h", 
+            "period": "730d", 
+            "desc": "เหมาะสำหรับ: เล่นรอบ (Swing Trade)",
+            "note": "SMA 200 = แนวโน้ม ~1 เดือน"
+        },
+        "15 นาที (15m)": {
+            "iv": "15m", 
+            "period": "60d", 
+            "desc": "เหมาะสำหรับ: เก็งกำไรรายวัน (Day Trade)",
+            "note": "SMA 200 = แนวโน้ม ~4 วัน"
+        },
+        "5 นาที (5m)": {
+            "iv": "5m", 
+            "period": "60d", 
+            "desc": "เหมาะสำหรับ: เทรดเร็ว (Scalping)",
+            "note": "SMA 200 = แนวโน้ม ~1 วัน"
+        }
+    }
+    
+    selected_tf = st.sidebar.selectbox("เลือกหน่วยเวลา:", list(timeframe_config.keys()), index=0)
+    conf = timeframe_config[selected_tf]
+    
+    st.sidebar.info(f"📋 **{conf['desc']}**\n\n🔍 {conf['note']}")
 
-    # ฟังก์ชันดึงข้อมูล (เหมือนเดิมแต่ปรับปรุง error handling)
-    def get_data(ticker, interval):
+    # --- 5. ฟังก์ชันดึงข้อมูล (Error Handling & Optimized) ---
+    def get_data(ticker, interval, data_period):
         try:
-            # แก้ไข ticker สำหรับตลาดไทยถ้าลืมใส่ .BK
-            if any(thai_stock in ticker for thai_stock in ["PTT", "AOT", "KBANK", "CPALL"]) and "." not in ticker:
+            # ตรวจสอบหุ้นไทย (Auto .BK)
+            thai_stocks = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR"]
+            if ticker in thai_stocks and "." not in ticker:
                 ticker += ".BK"
                 
-            df = yf.download(ticker, period="2y" if interval=="1d" else "60d", interval=interval, auto_adjust=True, progress=False)
-            if df.empty or len(df) < 200: return None
+            df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
             
-            # จัดการ Column MultiIndex (yfinance version ใหม่ๆ)
+            if df.empty or len(df) < 200: 
+                return None
+            
             if isinstance(df.columns, pd.MultiIndex): 
                 df.columns = df.columns.get_level_values(0)
             
+            # คำนวณ SMA 200
             df['SMA200'] = df['Close'].rolling(200).mean()
+            
+            # คำนวณ RSI 14
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+            
             return df
         except:
             return None
 
-    # --- การสแกน ---
+    # --- 6. ส่วนประมวลผลการสแกน ---
     results = []
     if not final_list:
-        st.warning("⚠️ กรุณาเลือกหรือเพิ่มหุ้นอย่างน้อย 1 ตัวในแถบด้านซ้าย")
+        st.warning("👈 กรุณาเลือกหรือเพิ่มรายชื่อหุ้นที่แถบด้านซ้าย")
     else:
-        with st.spinner('กำลังประมวลผลข้อมูล...'):
+        with st.spinner('กำลังประมวลผลข้อมูลล่าสุด...'):
             for t in final_list:
-                df = get_data(t, itv_map[itv])
+                df = get_data(t, conf['iv'], conf['period'])
                 if df is not None:
                     last = df.iloc[-1]
                     p, r, s = last['Close'], last['RSI'], last['SMA200']
                     
-                    if p > s and r < 40: act, col = "🟢 STRONG BUY", "#00ffbb"
-                    elif r > 75: act, col = "💰 PROFIT", "#ffcc00"
-                    elif p < s: act, col = "🔴 EXIT/AVOID", "#ff3366"
-                    else: act, col = "⚪ Wait", "#787b86"
+                    if p > s and r < 40: act = "🟢 STRONG BUY"
+                    elif r > 75: act = "💰 PROFIT"
+                    elif p < s: act = "🔴 EXIT/AVOID"
+                    else: act = "⚪ Wait"
                     
-                    results.append({"Ticker": t, "Price": f"{p:,.2f}", "RSI": round(r,1), "Signal": act})
+                    results.append({
+                        "Ticker": t, 
+                        "Price": f"{p:,.2f}", 
+                        "RSI": round(r,1), 
+                        "Signal": act
+                    })
 
         if results:
             res_df = pd.DataFrame(results)
-            st.subheader(f"🎯 รายการสแกนปัจจุบัน ({itv})")
+            # จัดลำดับ: STRONG BUY ขึ้นก่อน
+            priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1, "⚪ Wait": 2, "🔴 EXIT/AVOID": 3}
+            res_df['sort'] = res_df['Signal'].map(priority)
+            res_df = res_df.sort_values('sort').drop(columns=['sort'])
+            
+            st.subheader(f"🎯 รายการสแกนปัจจุบัน ({selected_tf})")
             st.dataframe(res_df, use_container_width=True, hide_index=True)
             
             st.divider()
             
-            # เลือกหุ้นเพื่อดูกราฟ (เฉพาะจากที่มีข้อมูล)
-            analyzable_assets = [r['Ticker'] for r in results]
-            selected_plot = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟเทคนิค:", analyzable_assets)
+            # --- 7. ส่วนวิเคราะห์กราฟเทคนิค ---
+            analyzable = [r['Ticker'] for r in results]
+            selected_plot = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟเทคนิค:", analyzable)
             
-            df_plot = get_data(selected_plot, itv_map[itv])
+            df_plot = get_data(selected_plot, conf['iv'], conf['period'])
+            
             if df_plot is not None:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
                 
@@ -145,3 +190,9 @@ with tab1:
                 
                 fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
                 st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error("❌ ไม่พบข้อมูลหุ้น (ตรวจสอบชื่อหุ้น หรือข้อมูลไม่เพียงพอสำหรับ SMA 200)")
+
+# บรรทัดสุดท้ายสามารถเพิ่มปุ่ม Refresh ได้ถ้าต้องการ
+if st.button("🔄 อัปเดตข้อมูลทั้งหมด"):
+    st.rerun()
