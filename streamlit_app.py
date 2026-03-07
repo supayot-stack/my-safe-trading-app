@@ -190,18 +190,26 @@ with tabs[3]:
 with tabs[4]:
     st.header("🛡️ Advanced Analytics")
     if 'td_df' in locals() and not td_df.empty:
-        col_m1, col_m2 = st.columns([2, 1])
+        # ปรับแก้ให้ Metrics กับ กราฟ อยู่ในสัดส่วนที่สมดุลและกึ่งกลางขึ้น
+        col_m1, col_m2 = st.columns([2.5, 1], gap="large") 
         with col_m1:
             st.subheader("🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(1000)]
             fig_mc = go.Figure()
             for s in sims[:100]: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.5), opacity=0.2, showlegend=False))
+            fig_mc.update_layout(height=500, margin=dict(l=0,r=0,b=0,t=40), template="plotly_dark")
             st.plotly_chart(fig_mc, use_container_width=True)
         with col_m2:
-            st.metric("Profit Factor", f"{td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()):.2f}")
-            st.metric("Expectancy", f"{td_df['PnL'].mean():,.2f} THB")
+            st.subheader("📊 Key Metrics")
+            st.markdown("<br>", unsafe_allow_html=True) # ปรับช่องไฟ
+            win_rate = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
+            pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
+            
+            st.metric("Win Rate", f"{win_rate:.1f}%")
+            st.metric("Profit Factor", f"{pf:.2f}")
+            st.metric("Expectancy / Trade", f"{td_df['PnL'].mean():,.0f} THB")
             st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
-    else: st.info("Run Backtest first")
+    else: st.info("Run Backtest first to see analytics")
 
 with tabs[5]:
     st.header("📖 Guide & Logic")
