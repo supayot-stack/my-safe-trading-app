@@ -8,34 +8,48 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG ---
+# --- 1. PRO UI CONFIG (ปรับแต่ง Tabs ให้เหมือนในรูปที่สุด) ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    .stMetric { 
+    .stApp { background-color: #0d1117; color: #e1e4e8; }
+    
+    /* ปรับแต่ง Tabs ให้ดู Clean และเป็น Flat Design แบบในรูป */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 15px;
+        background-color: transparent;
+        border-bottom: 1px solid #21262d;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent !important;
+        border: none !important;
+        color: #8b949e !important;
+        padding: 12px 0px !important;
+        font-size: 15px !important;
+    }
+    /* เมื่อเลือก Tab: ใช้เส้นใต้สีเขียว/ขาว และเปลี่ยนสีตัวอักษร */
+    .stTabs [aria-selected="true"] {
+        color: #ffffff !important;
+        background-color: transparent !important;
+        border-bottom: 2px solid #58a6ff !important;
+        font-weight: 500 !important;
+    }
+    
+    /* สไตล์สำหรับ Metric Card ในหน้า Analytics (ปรับให้เป็นกล่องสีเทาเรียบๆ แบบในรูป) */
+    .analytics-card {
         background-color: #161b22; 
-        padding: 20px; 
-        border-radius: 12px; 
-        border: 1px solid #30363d; 
-        border-left: 5px solid #00ff00;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        padding: 15px; 
+        border-radius: 6px; 
+        border: 1px solid #21262d; 
+        margin-bottom: 10px;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { 
-        background-color: #161b22; border-radius: 6px 6px 0px 0px; 
-        padding: 12px 25px; color: #8b949e; transition: 0.3s;
-    }
-    .stTabs [aria-selected="true"] { 
-        background-color: #238636 !important; color: white !important; font-weight: bold;
-    }
-    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 10px; background-color: #0d1117; }
+    div[data-testid="stExpander"] { border: 1px solid #21262d; border-radius: 8px; background-color: #0d1117; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & LIVE FX ---
-DB_FILE = "the_masterpiece_v2.json"
-BAK_FILE = "the_masterpiece_v2.json.bak"
+DB_FILE = "the_masterpiece_v3.json"
+BAK_FILE = "the_masterpiece_v3.json.bak"
 COMMISSION_RATE = 0.0015 
 
 @st.cache_data(ttl=3600) 
@@ -64,7 +78,6 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    # Auto-suffix for Thai Stocks
     thai_popular = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_popular and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
@@ -82,28 +95,20 @@ def fetch_all_data(tickers):
                     df = raw_data.xs(t, axis=1, level=1).copy()
                 else:
                     df = raw_data.copy()
-                
                 if df.empty or len(df) < 50: continue
-                
-                # Decision Indicators
                 df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
                 df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
-                
                 delta = df['Close'].diff()
                 gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-                
                 tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
                 df['ATR'] = tr.rolling(14, min_periods=1).mean()
-                
-                # Dynamic Trailing SL
                 sl_raw = df['Close'] - (df['ATR'] * 2.5)
                 tsl = np.zeros(len(df)); tsl[0] = sl_raw.iloc[0]
                 for i in range(1, len(df)):
                     tsl[i] = max(tsl[i-1], sl_raw.iloc[i]) if df['Close'].iloc[i-1] > tsl[i-1] else sl_raw.iloc[i]
                 df['Trailing_SL'] = tsl
-                
                 df['Vol_Ratio'] = df['Volume'] / df['Volume'].rolling(20, min_periods=1).mean().replace(0, np.nan)
                 processed[t] = df.ffill().bfill()
             except: continue
@@ -118,7 +123,7 @@ with st.sidebar:
     st.markdown("`Institutional Systematic OS`")
     st.divider()
     st.info(f"💵 FX Rate: **{LIVE_USDTHB:.2f} THB**")
-    capital = st.number_input("Total Equity (THB):", value=1000000, step=50000)
+    capital = st.number_input("Total Capital (THB):", value=1000000, step=50000)
     risk_pct = st.slider("Risk Per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
     watchlist_input = st.text_area("Watchlist (CSV):", "NVDA, AAPL, PTT, DELTA, BTC-USD")
@@ -131,26 +136,22 @@ results = []
 for t in final_watchlist:
     if t not in data_dict: continue
     df = data_dict[t]; curr = df.iloc[-1]; prev = df.iloc[-2]; p = curr['Close']
-    
     is_bullish = p > curr['SMA200'] and p > curr['SMA50']
     is_pullback = prev['RSI'] < 48 and curr['RSI'] > prev['RSI']
     is_liquid = curr['Vol_Ratio'] > 1.1
-
     if is_bullish and is_pullback and is_liquid: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 82: sig = "💰 TAKE PROFIT"
     elif p < curr['SMA200']: sig = "🔴 RISK OFF"
     else: sig = "⚪ WAIT"
-
-    # Multi-currency handling
     is_thai = ".BK" in t or (t.isalpha() and len(t) <= 5 and "USD" not in t)
     fx = 1 if is_thai else LIVE_USDTHB
-    
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
     qty = int((capital * (risk_pct/100) / fx) / sl_gap) if fx > 1 else int(((capital * (risk_pct/100) / fx) / sl_gap) // 100) * 100
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
 
 # --- 6. MAIN DISPLAY ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics", "📖 Logic Guide"])
+# ใส่ Icon หน้า Tab ให้เหมือนในรูปที่สุด
+tabs = st.tabs(["🏛 Scanner", "📉 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
 
 with tabs[0]:
     st.subheader("📊 Tactical Opportunities")
@@ -167,7 +168,7 @@ with tabs[1]:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='TSL', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Vol', marker_color='#c0c0c0', opacity=0.4), row=3, col=1)
-        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,b=0,t=20))
+        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,b=0,t=20), paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
         st.plotly_chart(fig, use_container_width=True)
 
 with tabs[2]:
@@ -218,29 +219,80 @@ with tabs[3]:
             st.metric("Net Terminal Value", f"{balance:,.2f} THB")
             st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
 
+# --- หน้า ANALYTICS HUB ปรับแก้ให้เหมือนรูปที่สุด ---
 with tabs[4]:
-    st.header("🛡️ Analytics Hub")
     if 'td_df' in locals() and not td_df.empty:
-        st.markdown("---")
-        l_m, col_chart, col_stat, r_m = st.columns([0.5, 5, 2.5, 0.5], gap="large")
-        with col_chart:
-            st.subheader("🎲 Monte Carlo Simulation")
+        # แบ่งเป็น 3 คอลัมน์สมบูรณ์แบบ [1.2, 0.6, 1.2]
+        col_left, col_mid, col_right = st.columns([1.2, 0.6, 1.2], gap="large")
+        
+        with col_left:
+            st.markdown("##### 🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
             fig_mc = go.Figure()
-            for s in sims: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1), opacity=0.15, showlegend=False))
-            fig_mc.update_layout(height=480, margin=dict(l=0,r=0,b=0,t=20), template="plotly_dark")
+            # ตกแต่งสไตล์กราฟ Monte Carlo ให้ดูหนาแน่นแบบในรูป
+            for s in sims:
+                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.12, showlegend=False))
+            fig_mc.update_layout(
+                height=450, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Number of Trades", yaxis_title="Portfolio Value (THB)",
+                xaxis=dict(gridcolor='#21262d'), yaxis=dict(gridcolor='#21262d')
+            )
             st.plotly_chart(fig_mc, use_container_width=True)
-            
-        with col_stat:
-            st.subheader("📊 Performance KPIs")
+
+        with col_mid:
             win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
             pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
-            st.metric("Win Rate", f"{win_r:.1f}%")
-            st.metric("Profit Factor", f"{pf:.2f}")
-            st.metric("Avg Trade P/L", f"{td_df['PnL'].mean():,.0f} ฿")
-            st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
-            st.divider(); st.success("Robustness: Verified")
-    else: st.info("Run backtest to activate analytics.")
+            avg_pnl = td_df['PnL'].mean()
+            max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
+
+            # สร้าง Metric Cards ให้เป็นกล่องสีเทาเรียบๆ แบบในรูป
+            st.markdown(f"""
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 30px;">
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Win Rate</p>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{win_r:.1f}%</h2>
+                    </div>
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Profit Factor</p>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{pf:.2f}</h2>
+                    </div>
+                    <div class="analytics-card">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Avg Trade P/L</p>
+                        <h2 style="color: #2ea043; margin: 0; font-size: 24px;">{avg_pnl:,.0f} <span style="font-size: 14px; color:#e1e4e8">THB</span></h2>
+                    </div>
+                    <div class="analytics-card" style="border-left-color: #f85149;">
+                        <p style="color: #8b949e; margin: 0; font-size: 13px;">Max Drawdown</p>
+                        <h2 style="color: #f85149; margin: 0; font-size: 24px;">{max_dd:.1f}%</h2>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col_right:
+            st.markdown("##### 📈 Equity Curve")
+            # แสดง Final Balance ด้านบนกราฟ
+            final_val = td_df['Equity'].iloc[-1]
+            st.markdown(f"**Final Balance (Net)**: <span style='color:#2ea043; font-size: 18px;'>{final_val:,.2f} THB</span>", unsafe_allow_html=True)
+            fig_eq = go.Figure()
+            # ตกแต่งกราฟ Equity Curve ให้มี Fill สีเขียวอ่อนๆ เลียนแบบในรูป
+            fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
+                                     line=dict(color='#39d353', width=1.5), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.08)'))
+            fig_eq.update_layout(
+                height=400, margin=dict(l=0, r=0, b=0, t=10), template="plotly_dark",
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Date", yaxis_title="Portfolio Value (THB)",
+                xaxis=dict(gridcolor='#21262d'), yaxis=dict(gridcolor='#21262d')
+            )
+            st.plotly_chart(fig_eq, use_container_width=True)
+
+        # แถบ Status ด้านล่างสุด
+        st.markdown("""
+            <div style="background-color: #161b22; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #21262d; margin-top: 20px;">
+                <span style="color: #39d353; font-weight: bold;">✅ System Alpha Verified</span>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("⚠️ Run backtest to activate analytics.")
 
 with tabs[5]:
     st.header("📖 The Masterpiece Decision Logic")
