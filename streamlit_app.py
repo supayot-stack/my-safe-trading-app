@@ -3,103 +3,108 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import numpy as np
 
-# --- 1. SETUP ---
+# --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro", layout="wide")
-st.markdown("""<style>.stApp { background-color: #0e1117; color: #ffffff; }</style>""", unsafe_allow_html=True)
 
-if 'my_watchlist' not in st.session_state:
-    st.session_state.my_watchlist = ["^SET50.BK", "PTT.BK", "BTC-USD", "NVDA", "TSLA"]
+st.markdown("""
+    <style>
+    .stApp { background-color: #0e1117; color: #ffffff; }
+    .guide-box { background-color: #1e222d; padding: 20px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 15px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- 2. DATA ENGINE (จัดการกรณีข้อมูลไม่พอ) ---
-@st.cache_data(ttl=300)
-def fetch_data(ticker, interval):
-    try:
-        # ปรับระยะเวลาให้ดึงข้อมูลได้เพียงพอต่อ SMA200
-        p = "max" if interval == "1d" else "60d" 
-        df = yf.download(ticker, period=p, interval=interval, auto_adjust=True, progress=False)
+# --- 2. ส่วนเมนู (Tabs) ---
+tab1, tab2 = st.tabs(["📊 ระบบสแกนและกราฟ", "📖 คู่มือการใช้งานสำหรับมือใหม่"])
+
+with tab2:
+    st.header("📖 คู่มือการใช้งาน Safe Heaven Scanner")
+    
+    st.markdown("""
+    ### 🛡️ กลยุทธ์นี้คืออะไร?
+    กลยุทธ์นี้เน้นการ **"ซื้อเมื่อย่อในขาขึ้น"** และ **"หนีเมื่อเป็นขาลง"** โดยใช้เครื่องมือหลัก 2 ตัว:
+    
+    1. **เส้น SMA 200 (แนวโน้มระยะยาว):** * ถ้าราคา **อยู่เหนือ** เส้นนี้ = ขาขึ้น (ปลอดภัยที่จะเล่น)
+        * ถ้าราคา **อยู่ใต้** เส้นนี้ = ขาลง (อันตราย ห้ามถือ)
+    
+    2. **RSI 14 (แรงแกว่ง):** * ใช้ดูว่าหุ้น "ถูก" หรือ "แพง" เกินไปในขณะนั้น
+    """)
+
+    
+
+    st.markdown("""
+    ---
+    ### 🚦 วิธีอ่านสัญญาณ (Trading Signals)
+    * 🟢 **STRONG BUY:** ราคาอยู่เหนือเส้น SMA 200 (ขาขึ้นชัดเจน) แต่ RSI ต่ำกว่า 40 (ราคาเพิ่งย่อตัวลงมา เป็นจุดซื้อที่ได้เปรียบ)
+    * 💰 **TAKE PROFIT:** RSI สูงกว่า 75 แปลว่าราคาขึ้นแรงเกินไปแล้ว มีโอกาสย่อตัวสูง ควรพิจารณาขายทำกำไร
+    * 🔴 **EXIT/AVOID:** ราคาหลุดเส้น SMA 200 ลงมา แปลว่าเปลี่ยนเป็นขาลงแล้ว ให้ขายออกทันทีเพื่อรักษาเงินต้น
+    * ⚪ **WAIT:** สัญญาณยังไม่ชัดเจน ให้ถือเงินสดรอไปก่อน
+    
+    ---
+    ### ⚙️ การตั้งค่าหน่วยเวลา (Timeframe)
+    * **1 วัน (1d):** สำหรับนักลงทุนระยะกลาง-ยาว (ถือหลักสัปดาห์/เดือน) แม่นยำที่สุด
+    * **1 ชั่วโมง / 5 นาที:** สำหรับนักเก็งกำไรระยะสั้น (Day Trade) สัญญาณจะมาไวแต่มีความเสี่ยงผันผวนสูง
+    """)
+
+with tab1:
+    st.title("🛡️ Safe Heaven Quant Scanner")
+    
+    # (ส่วนโค้ดการทำงานเดิมที่คุณชอบ)
+    stock_categories = {
+        "🌍 Indices": ["^GSPC", "^SET50.BK", "GC=F"],
+        "💻 Tech": ["NVDA", "AAPL", "TSLA", "MSFT"],
+        "₿ Crypto": ["BTC-USD", "ETH-USD"],
+        "🇹🇭 Thai": ["PTT.BK", "AOT.BK", "KBANK.BK"]
+    }
+    
+    all_assets = [s for cat in stock_categories.values() for s in cat]
+    
+    st.sidebar.header("⏱️ Settings")
+    itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
+    itv = st.sidebar.selectbox("หน่วยเวลา:", list(itv_map.keys()), index=0)
+    
+    # ฟังก์ชันคำนวณและดึงข้อมูล
+    def get_data(ticker, interval):
+        try:
+            df = yf.download(ticker, period="2y" if interval=="1d" else "60d", interval=interval, auto_adjust=True, progress=False)
+            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            if len(df) < 200: return None
+            df['SMA200'] = df['Close'].rolling(200).mean()
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+            return df
+        except: return None
+
+    # สแกนหาตัวที่มีสัญญาณ
+    results = []
+    for t in all_assets:
+        df = get_data(t, itv_map[itv])
+        if df is not None:
+            last = df.iloc[-1]
+            p, r, s = last['Close'], last['RSI'], last['SMA200']
+            if p > s and r < 40: act, col = "STRONG BUY", "#00ffbb"
+            elif r > 75: act, col = "PROFIT", "#ffcc00"
+            elif p < s: act, col = "EXIT", "#ff3366"
+            else: act, col = "Wait", "#787b86"
+            results.append({"Ticker": t, "Price": f"{p:,.2f}", "RSI": round(r,1), "Signal": act, "Color": col})
+    
+    if results:
+        res_df = pd.DataFrame(results)
+        st.subheader(f"🎯 รายการสแกนปัจจุบัน ({itv})")
+        st.dataframe(res_df.drop(columns=['Color']), use_container_width=True, hide_index=True)
         
-        if df is None or df.empty or len(df) < 20: return None # อย่างน้อยต้องมีข้อมูลบ้าง
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        st.divider()
+        selected = st.selectbox("🔍 เลือกดูวิเคราะห์กราฟ:", all_assets)
+        df_plot = get_data(selected, itv_map[itv])
         
-        # คำนวณพื้นฐาน (SMA200 อาจเป็น NaN ได้ถ้าข้อมูลไม่ถึง 200)
-        df['SMA200'] = df['Close'].rolling(200).mean()
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-        
-        # RVOL & Squeeze
-        df['V_Avg'] = df['Volume'].rolling(20).mean()
-        df['RVOL'] = df['Volume'] / (df['V_Avg'] + 1e-9)
-        m20 = df['Close'].rolling(20).mean()
-        std = df['Close'].rolling(20).std()
-        df['UB'], df['LB'] = m20 + (2*std), m20 - (2*std)
-        tr = pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift(1)).abs(), (df['Low']-df['Close'].shift(1)).abs()], axis=1).max(axis=1)
-        atr = tr.rolling(20).mean()
-        df['UK'], df['LK'] = m20 + (1.5*atr), m20 - (1.5*atr)
-        df['SQZ'] = (df['LB'] > df['LK']) & (df['UB'] < df['UK'])
-        
-        return df
-    except: return None
-
-# --- 3. SIDEBAR NAVIGATION ---
-st.sidebar.title("🧭 Navigator")
-mode = st.sidebar.radio("เลือกโหมดกลยุทธ์:", [
-    "Trend Follower (SMA+RSI)", 
-    "Volume Hunter (RVOL)", 
-    "Volatility Squeeze"
-])
-itv_map = {"1 วัน": "1d", "1 ชั่วโมง": "1h", "5 นาที": "5m"}
-itv_label = st.sidebar.selectbox("หน่วยเวลา:", list(itv_map.keys()))
-itv_code = itv_map[itv_label]
-
-st.title("🛡️ Safe Heaven Quant Pro")
-
-# --- 4. TOP SECTION: CHART (ย้ายขึ้นบนสุด) ---
-if st.session_state.my_watchlist:
-    sel = st.selectbox("📊 วิเคราะห์กราฟรายตัว:", st.session_state.my_watchlist)
-    p_df = fetch_data(sel, itv_code)
-    if p_df is not None:
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
-        fig.add_trace(go.Candlestick(x=p_df.index, open=p_df['Open'], high=p_df['High'], low=p_df['Low'], close=p_df['Close'], name='Price'), row=1, col=1)
-        # แสดง SMA 200 เฉพาะเมื่อมีข้อมูล
-        if not p_df['SMA200'].isnull().all():
-            fig.add_trace(go.Scatter(x=p_df.index, y=p_df['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=p_df.index, y=p_df['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.update_layout(height=450, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
-
-# --- 5. MIDDLE SECTION: SCANNER TABLE + MANUAL ---
-st.divider()
-if mode == "Trend Follower (SMA+RSI)":
-    st.subheader("🛡️ กลยุทธ์ Trend Follower")
-    with st.expander("📖 คู่มือเทคนิค: SMA 200 + RSI", expanded=True):
-        st.write("- ซื้อเมื่อราคา > SMA200 (ขาขึ้น) และ RSI < 40 (ย่อตัว)")
-elif mode == "Volume Hunter (RVOL)":
-    st.subheader("📊 กลยุทธ์ Volume Hunter")
-    with st.expander("📖 คู่มือเทคนิค: RVOL", expanded=True):
-        st.write("- RVOL > 2.0 แปลว่ามีแรงซื้อขายมากกว่าค่าเฉลี่ย 2 เท่า")
-elif mode == "Volatility Squeeze":
-    st.subheader("🚀 กลยุทธ์ Volatility Squeeze")
-    with st.expander("📖 คู่มือเทคนิค: Squeeze", expanded=True):
-        st.write("- 💎 SQZ คือช่วงราคาบีบตัวรอนอกกรอบเพื่อระเบิดราคา")
-
-res = []
-for t in st.session_state.my_watchlist:
-    d = fetch_data(t, itv_code)
-    if d is not None:
-        l = d.iloc[-1]
-        if mode == "Trend Follower (SMA+RSI)":
-            p, r, s = l['Close'], l['RSI'], l['SMA200']
-            if pd.isna(s): sig = "⚠️ ข้อมูลไม่พอ (SMA200)"
-            else: sig = "🟢 BUY" if p > s and r < 40 else "🔴 EXIT" if p < s else "WAIT"
-            res.append({"Ticker": t, "Price": f"{p:,.2f}", "RSI": round(r,1), "Signal": sig})
-        elif mode == "Volume Hunter (RVOL)":
-            res.append({"Ticker": t, "RVOL": round(l['RVOL'],2), "Status": "🔥 HIGH" if l['RVOL'] > 2 else "Normal"})
-        elif mode == "Volatility Squeeze":
-            res.append({"Ticker": t, "Squeeze": "💎 SQZ" if l['SQZ'] else "Released"})
-
-if res:
-    st.table(pd.DataFrame(res))
+        if df_plot is not None:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+            fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
+            fig.update_layout(height=600, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
