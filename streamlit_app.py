@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import google.generativeai as genai
+import os
 
 # --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(page_title="Safe Heaven Quant Pro Max", layout="wide")
@@ -11,7 +13,7 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .risk-box { background-color: #2c3333; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-top: 10px; }
-    .ai-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border: 1px solid #00ffcc; }
+    .ai-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border: 1px solid #00ffcc; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -38,6 +40,12 @@ with tab1:
     st.title("🛡️ Safe Heaven Quant Pro Max + Risk Manager")
     
     # --- 3. Sidebar: Settings & Portfolio ---
+    st.sidebar.header("🔑 AI Settings")
+    gemini_api_key = st.sidebar.text_input("ใส่ Gemini API Key:", type="password", help="รับฟรีได้ที่ Google AI Studio")
+    if gemini_api_key:
+        genai.configure(api_key=gemini_api_key)
+
+    st.sidebar.divider()
     st.sidebar.header("💰 Portfolio Settings")
     portfolio_size = st.sidebar.number_input("เงินทุนทั้งหมด (บาท):", min_value=1000, value=100000, step=1000)
     risk_per_trade = st.sidebar.slider("ความเสี่ยงต่อการเทรด (%):", 0.5, 5.0, 1.0)
@@ -51,7 +59,8 @@ with tab1:
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
 
-    # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + Risk Calculations) ---
+    # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + Risk Calculations + ATR) ---
+    @st.cache_data(ttl=3600) # Cache ข้อมูล 1 ชั่วโมงเพื่อความเร็ว
     def get_data(ticker, interval, data_period):
         try:
             # จัดการชื่อหุ้นไทยอัตโนมัติ
@@ -62,7 +71,7 @@ with tab1:
             if df.empty or len(df) < 200: return None
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
-            # คำนวณอินดิเคเตอร์
+            # คำนวณอินดิเคเตอร์พื้นฐาน
             df['SMA200'] = df['Close'].rolling(200).mean()
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -70,11 +79,21 @@ with tab1:
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
             df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
             
-            # จุดหนี (Stop Loss) 3% และเป้าหมาย (Take Profit) 7%
-            df['SL'] = df['Close'] * 0.97
-            df['TP'] = df['Close'] * 1.07
+            # 🚀 NEW: คำนวณ ATR (Average True Range) 14 วัน
+            high_low = df['High'] - df['Low']
+            high_close = (df['High'] - df['Close'].shift()).abs()
+            low_close = (df['Low'] - df['Close'].shift()).abs()
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            true_range = ranges.max(axis=1)
+            df['ATR'] = true_range.rolling(14).mean()
+            
+            # 🚀 NEW: Dynamic Stop Loss & Take Profit (Risk/Reward 1:2)
+            df['SL'] = df['Close'] - (df['ATR'] * 1.5)
+            df['TP'] = df['Close'] + (df['ATR'] * 3.0)
+            
             return df
-        except: return None
+        except Exception: 
+            return None
 
     # --- 5. ประมวลผลและตารางผลลัพธ์ ---
     results = []
@@ -87,15 +106,17 @@ with tab1:
                     p, r, s, v, va = l['Close'], l['RSI'], l['SMA200'], l['Volume'], l['Vol_Avg5']
                     
                     # ตรรกะสัญญาณ (Trend + Momentum + Volume)
+                    # แก้ไข: เพิ่ม Buy on Dip (ราคาเหนือ SMA200 แต่ RSI ต่ำ)
                     if p > s and r < 40 and v > va: act = "🟢 STRONG BUY"
-                    elif r > 75: act = "💰 PROFIT"
-                    elif p < s: act = "🔴 EXIT/AVOID"
-                    else: act = "⚪ Wait"
+                    elif p > s and r < 40: act = "🟡 BUY ON DIP"
+                    elif r > 75: act = "💰 PROFIT TAKING"
+                    elif p < s: act = "🔴 AVOID"
+                    else: act = "⚪ WAIT"
                     
                     # ยืนยันแรงซื้อ (Volume Confirmation)
                     v_ok = "✅" if v > va else "❌"
                     
-                    # คำนวณจำนวนหุ้น (Position Sizing)
+                    # คำนวณจำนวนหุ้น (Position Sizing จาก ATR)
                     risk_amount = portfolio_size * (risk_per_trade / 100)
                     sl_dist = p - l['SL']
                     qty = int(risk_amount / sl_dist) if sl_dist > 0 else 0
@@ -108,10 +129,10 @@ with tab1:
 
         if results:
             res_df = pd.DataFrame(results)
-            priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1, "⚪ Wait": 2, "🔴 EXIT/AVOID": 3}
+            priority = {"🟢 STRONG BUY": 0, "🟡 BUY ON DIP": 1, "💰 PROFIT TAKING": 2, "⚪ WAIT": 3, "🔴 AVOID": 4}
             res_df['sort'] = res_df['Signal'].map(priority)
             res_df = res_df.sort_values('sort').drop(columns=['sort'])
-            st.subheader("🎯 สรุปสัญญาณและแผนคุมความเสี่ยง")
+            st.subheader("🎯 สรุปสัญญาณและแผนคุมความเสี่ยง (ATR-Based)")
             st.dataframe(res_df, use_container_width=True, hide_index=True)
 
     st.divider()
@@ -130,14 +151,10 @@ with tab1:
                 fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
                 
-                # ปรับสี Volume เป็นสีเทาเงินสว่างตัดกับพื้นหลังดำ
+                # ปรับสี Volume
                 fig.add_trace(go.Bar(
-                    x=df_plot.index, 
-                    y=df_plot['Volume'], 
-                    name='Volume', 
-                    marker_color='#4A4A4A', 
-                    opacity=0.6,
-                    marker_line_width=0
+                    x=df_plot.index, y=df_plot['Volume'], name='Volume', 
+                    marker_color='#4A4A4A', opacity=0.6, marker_line_width=0
                 ), row=1, col=1)
                 
                 # กราฟ RSI
@@ -157,29 +174,48 @@ with tab1:
                 <h4>คำแนะนำสำหรับ {selected_plot}</h4>
                 <p>กรณีเข้าซื้อที่ราคาปัจจุบัน ({target_data['Price']})</p>
                 <ul>
-                    <li><b>จำนวนหุ้นที่แนะนำ:</b> {target_data['Qty to Buy']:,} หุ้น</li>
-                    <li><b>เงินที่ใช้ซื้อทั้งหมด:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
-                    <li><b>จุดหนี (Stop Loss):</b> {target_data['StopLoss']}</li>
-                    <li><b>ความเสียหายหากแพ้:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท ({risk_per_trade}%)</li>
+                    <li><b>จำนวนหุ้นที่ซื้อได้ (เซฟโซน):</b> {target_data['Qty to Buy']:,} หุ้น</li>
+                    <li><b>เงินที่ต้องใช้ทั้งหมด:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
+                    <li><b>จุดหนีอัตโนมัติ (ATR Stop Loss):</b> {target_data['StopLoss']}</li>
+                    <li><b>เป้าทำกำไร (Take Profit 1:2):</b> {target_data['Target']}</li>
+                    <li><b>ความเสียหายเต็มที่หากแพ้:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท ({risk_per_trade}%)</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
             
             st.markdown("---")
-            st.markdown("### 🔮 AI Future Insight")
-            news_input = st.text_area("วิเคราะห์ข่าว/เหตุการณ์ปัจจุบัน:", placeholder="วางข่าวที่นี่ เช่น ผลประกอบการดีเกินคาด หรือข่าวสงคราม...")
-            if st.button("ประมวลผล AI"):
-                if news_input:
-                    # ตรรกะวิเคราะห์เบื้องต้น
-                    pos_words = ["ดี", "โต", "เพิ่ม", "กำไร", "ชนะ", "บวก", "growth", "profit"]
-                    neg_words = ["แย่", "ลด", "ขาดทุน", "สงคราม", "ลบ", "loss", "drop"]
-                    score = sum(1 for w in pos_words if w in news_input) - sum(1 for w in neg_words if w in news_input)
-                    
-                    if score > 0:
-                        st.success("📈 AI คาดการณ์: เชิงบวก - เหตุการณ์นี้มีโอกาสหนุนให้ราคาขึ้นต่อตามแผน")
-                    elif score < 0:
-                        st.error("📉 AI คาดการณ์: เชิงลบ - ระวังแรงเทขาย ให้เข้มงวดกับจุด Stop Loss")
-                    else:
-                        st.warning("⚪ AI คาดการณ์: เป็นกลาง - ตลาดอาจรับข่าวไปแล้ว ให้เทรดตามกราฟเทคนิค")
+            
+            # --- AI Future Insight ---
+            st.markdown("### 🧠 AI Future Insight (Powered by Gemini)")
+            news_input = st.text_area("วิเคราะห์ข่าว/เหตุการณ์ปัจจุบัน:", placeholder="วางข่าวที่นี่ เช่น งบไตรมาส 3 โต 20% แต่ผู้บริหารลดเป้าปีหน้า...")
+            
+            if st.button("ประมวลผล AI แบบลึกซึ้ง"):
+                if not gemini_api_key:
+                    st.warning("⚠️ โปรดใส่ Gemini API Key ในแถบด้านซ้ายก่อนใช้งาน (รับฟรีที่ Google AI Studio)")
+                elif news_input:
+                    with st.spinner('AI กำลังวิเคราะห์ความเชื่อมโยงของข่าวกับตลาด...'):
+                        try:
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            prompt = f"""
+                            ในฐานะนักวิเคราะห์ Quant ระดับโลก จงประเมินข่าวต่อไปนี้ว่ามีผลกระทบต่อราคาหุ้นอย่างไร:
+                            "{news_input}"
+                            
+                            ตอบกลับสั้นๆ 3 ข้อ:
+                            1. ทิศทาง: (เชิงบวก / เชิงลบ / เป็นกลาง)
+                            2. เหตุผล: (สรุปสั้นๆ ไม่เกิน 2 บรรทัด)
+                            3. คำแนะนำการเทรด: (เช่น ควรตั้ง Stop loss ให้แคบลง หรือ ทยอยสะสม)
+                            """
+                            response = model.generate_content(prompt)
+                            
+                            st.markdown(f"""
+                            <div class="ai-box">
+                                <b>💡 ผลการวิเคราะห์จาก AI:</b><br>{response.text}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        except Exception as e:
+                            st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อ AI: โปรดตรวจสอบ API Key หรือลองอีกครั้ง")
 
-if st.button("🔄 อัปเดตข้อมูล"): st.rerun()
+if st.button("🔄 อัปเดตข้อมูล (Clear Cache)"): 
+    st.cache_data.clear()
+    st.rerun()
