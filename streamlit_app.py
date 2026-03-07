@@ -28,6 +28,7 @@ st.markdown("""
 @st.cache_data(ttl=3600)
 def get_institutional_data(ticker):
     try:
+        # Auto-suffix for Thai Stocks
         if ticker.isalpha() and len(ticker) <= 5 and ticker.isupper():
             thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF"]
             if ticker in thai_list: ticker += ".BK"
@@ -38,6 +39,7 @@ def get_institutional_data(ticker):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
+        # Indicators
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
         
@@ -53,6 +55,7 @@ def get_institutional_data(ticker):
         ], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
         
+        # Risk Management Levels
         df['SL'] = df['Close'] - (df['ATR'] * 2.5) 
         df['TP'] = df['Close'] + (df['ATR'] * 5.0) 
 
@@ -88,12 +91,14 @@ if final_watchlist:
                 l = df.iloc[-1]
                 p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
                 
+                # Signal Logic
                 if p > s200 and p > s50 and r < 45 and vr > 1.2:
                     signal = "🟢 ACCUMULATE"
                 elif r > 75: signal = "💰 DISTRIBUTION"
                 elif p < s200: signal = "🔴 BEARISH REGIME"
                 else: signal = "⚪ NEUTRAL"
 
+                # Position Sizing Logic
                 risk_cash = equity * (max_risk / 100)
                 sl_gap = p - l['SL']
                 qty = int(risk_cash / sl_gap) if sl_gap > 0 else 0
@@ -102,17 +107,17 @@ if final_watchlist:
                 results.append({
                     "Asset": ticker, "Price": round(p, 2), "Regime": signal,
                     "RSI": round(r, 1), "Vol-Force": f"{vr:.2f}x",
-                    "Target Qty": f"{qty:,}", "Notional (THB)": f"{(qty*p):,.0f}",
-                    "Stop-Loss": round(l['SL'], 2)
+                    "Target Qty": f"{qty:,}", "Notional (THB)": round(qty*p, 2),
+                    "Stop-Loss": round(l['SL'], 2), "Risk_Per_Share": round(sl_gap, 2)
                 })
 
 # --- 5. MAIN TERMINAL ---
-t1, t2, t3 = st.tabs(["🏛 Market Scanner", "📈 Technical Deep-Dive", "📖 Terminal Guide"])
+t1, t2, t3, t4 = st.tabs(["🏛 Market Scanner", "📈 Technical Deep-Dive", "💼 Portfolio Manager", "📖 Terminal Guide"])
 
 with t1:
     st.subheader("🏛 Institutional Order Flow")
     if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(results).drop(columns=['Risk_Per_Share']), use_container_width=True, hide_index=True)
         c1, c2, c3 = st.columns(3)
         c1.metric("Equity", f"{equity:,.0f}")
         c2.metric("Risk Budget", f"{(equity*max_risk/100):,.0f}")
@@ -127,7 +132,7 @@ with t2:
         
         fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='yellow', width=1.5)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_pindex if 'df_pindex' in locals() else df_plot.index, y=df_plot['SL'], name='Institutional SL', line=dict(color='red', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SL'], name='Institutional SL', line=dict(color='red', dash='dot')), row=1, col=1)
         
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
@@ -139,46 +144,87 @@ with t2:
         fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
-# --- 6. USER GUIDE (NEW SECTION) ---
+# --- 6. PORTFOLIO MANAGER (NEW SECTION) ---
 with t3:
+    st.subheader("💼 Active Portfolio & Risk Exposure")
+    if results:
+        st.markdown("ระบุหุ้นที่คุณมีอยู่ในมือเพื่อคำนวณ **Portfolio Heat**")
+        col_sel, col_empty = st.columns([1, 2])
+        with col_sel:
+            holdings = st.multiselect("Select Assets to Portfolio:", [r['Asset'] for r in results])
+        
+        if holdings:
+            port_list = []
+            total_at_risk = 0
+            total_market_val = 0
+            
+            for asset in holdings:
+                # Find asset data from scanner results
+                asset_data = next(item for item in results if item["Asset"] == asset)
+                
+                # Input quantity for each asset (default to target qty)
+                default_qty = int(asset_data["Target Qty"].replace(',', ''))
+                
+                # Calculate metrics
+                current_p = asset_data["Price"]
+                sl_p = asset_data["Stop-Loss"]
+                risk_per_share = asset_data["Risk_Per_Share"]
+                
+                # Logic: Total Risk = Qty * (Entry - StopLoss)
+                asset_risk = default_qty * risk_per_share
+                market_val = default_qty * current_p
+                
+                total_at_risk += asset_risk
+                total_market_val += market_val
+                
+                port_list.append({
+                    "Asset": asset,
+                    "Qty": default_qty,
+                    "Market Value": f"{market_val:,.2f}",
+                    "Weight (%)": round((market_val / equity) * 100, 2),
+                    "Risk at Stake (THB)": f"{asset_risk:,.2f}",
+                    "Stop-Loss": sl_p
+                })
+            
+            # Display Table
+            st.dataframe(pd.DataFrame(port_list), use_container_width=True, hide_index=True)
+            
+            # Risk Summary Cards
+            st.divider()
+            m1, m2, m3, m4 = st.columns(4)
+            
+            # Portfolio Heat Calculation
+            heat_pct = (total_at_risk / equity) * 100
+            
+            m1.metric("Total Market Value", f"{total_market_val:,.0f}")
+            m2.metric("Cash Remaining", f"{(equity - total_market_val):,.0f}")
+            m3.metric("Portfolio Heat", f"{heat_pct:.2f}%", delta="-High Risk" if heat_pct > 6 else "Safe", delta_color="inverse")
+            m4.metric("Total Risk Amount", f"{total_at_risk:,.0f} THB")
+            
+            st.info("""
+            💡 **Quant Tip:** Portfolio Heat คือเปอร์เซ็นต์ของพอร์ตที่จะหายไปหากหุ้นทุกตัวโดน Stop Loss พร้อมกัน 
+            มาตรฐานสากลไม่ควรเกิน **6%** เพื่อความยั่งยืนของพอร์ตในระยะยาว
+            """)
+        else:
+            st.info("กรุณาเลือกหุ้นจากช่องด้านบนเพื่อจำลองพอร์ตการลงทุน")
+    else:
+        st.warning("ไม่มีข้อมูลใน Watchlist กรุณาเพิ่มหุ้นที่ Sidebar")
+
+# --- 7. USER GUIDE ---
+with t4:
     st.header("📖 คู่มือการใช้งานระบบ Institutional Quant Terminal")
-    
     st.markdown("""
     ### 1. การตั้งค่าหน้าตัก (Risk Management)
-    ก่อนเริ่มใช้งาน ให้กำหนดค่าที่ **Sidebar (แถบด้านข้าง)**:
-    * **Total Equity:** ระบุเงินทุนทั้งหมดของคุณ เพื่อให้ระบบคำนวณสัดส่วนการลงทุน
-    * **Risk per Trade:** กำหนดว่าหากพลาดพลั้ง คุณยอมขาดทุนได้กี่ % ของพอร์ต (แนะนำที่ 1-2%)
-    * **Watchlist:** เลือกหุ้นหรือสินทรัพย์ที่ต้องการสแกน
+    * **Total Equity:** ระบุเงินทุนทั้งหมดเพื่อให้ระบบคำนวณ Target Qty
+    * **Risk per Trade:** เปอร์เซ็นต์การขาดทุนที่ยอมรับได้ต่อ 1 ไม้ (แนะนำ 1%)
+    
+    ### 2. กลยุทธ์และการบริหารพอร์ต (Trading Strategy)
+    * **Target Qty:** จำนวนหุ้นที่ควรซื้อเพื่อให้ขาดทุนไม่เกินงบ Risk per Trade
+    * **Portfolio Heat (Tab 3):** หัวใจของการคุมความเสี่ยงรวม ห้ามให้ตัวเลขนี้สูงเกินไป
+    
+    ### 3. สถานะ Regime
+    * **🟢 ACCUMULATE:** ราคาอยู่เหนือเส้น SMA200 + RSI ต่ำ + Volume เข้า (จุดซื้อสถาบัน)
+    * **🔴 BEARISH:** ราคาอยู่ใต้เส้น SMA200 (ห้ามซื้อเด็ดขาด)
     ---
     """)
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.info("""
-        **🔍 การอ่านค่าใน Market Scanner**
-        * **🟢 ACCUMULATE:** หุ้นขาขึ้นที่ย่อตัวลงมา (จุดซื้อที่ได้เปรียบ)
-        * **💰 DISTRIBUTION:** ราคาขึ้นมาแรงเกินไป ควรเริ่มแบ่งขายทำกำไร
-        * **🔴 BEARISH:** ขาลงชัดเจน ไม่ควรมีสถานะซื้อ
-        * **Vol-Force:** แรงซื้อวันนี้เทียบกับอดีต (มากกว่า 1.2x คือมีนัยสำคัญ)
-        """)
-    
-    with col_b:
-        st.success("""
-        **🎯 ไม้เด็ด: Target Qty**
-        ระบบจะคำนวณจำนวนหุ้นที่ควรซื้อให้โดยอัตโนมัติ โดยอิงจากระยะ **Stop Loss** เพื่อให้ยอดขาดทุนของคุณไม่เกินงบประมาณที่ตั้งไว้ใน Risk per Trade 
-        *(ช่วยแก้ปัญหาการซื้อเยอะเกินไปจนพอร์ตระเบิด)*
-        """)
-
-    st.markdown("""
-    ---
-    ### 2. กลยุทธ์การเทรด (Institutional Strategy)
-    
-    เพื่อให้ได้ประสิทธิภาพสูงสุดตามแบบฉบับกองทุน:
-    1. **จังหวะเข้า (Entry):** เมื่อสถานะเป็น **ACCUMULATE** และราคายังอยู่เหนือเส้น **SMA 200 (เส้นเหลือง)**
-    2. **จุดตัดขาดทุน (Stop Loss):** ใช้เส้นประสีแดงในกราฟเป็นเกณฑ์หลัก (คำนวณจากความผันผวน ATR)
-    3. **ความมีวินัย:** ออกคำสั่งซื้อตามจำนวนในช่อง **Target Qty** เท่านั้น
-    
-    *หมายเหตุ: ข้อมูลอ้างอิงจาก Timeframe รายวัน (Daily) เหมาะสำหรับการเทรดแบบ Swing Trade ระยะกลาง*
-    """)
-    
     if st.button("🔄 Refresh Terminal System"): st.rerun()
