@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 import json
 import os
 import shutil
-from datetime import datetime, timedelta
 
 # --- 1. PRO UI CONFIG ---
 st.set_page_config(page_title="Gemini Master Quant v2.6 Ultimate", layout="wide")
@@ -71,7 +70,7 @@ def fetch_all_data(tickers):
             
             if df.empty or len(df) < 30: continue
             
-            # Indicators
+            # Indicators with Resilience Logic
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -99,7 +98,7 @@ with st.sidebar:
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Tickers (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
@@ -131,23 +130,23 @@ for ticker in final_watchlist:
 res_df = pd.DataFrame(results)
 
 # --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🧪 Analytics", "📖 Guide", "🧠 Architecture"])
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🧪 Analytics", "📖 Step-by-Step Guide", "🧠 System Logic"])
 
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("ระบุ Ticker ใน Sidebar")
+    else: st.warning("ระบุ Ticker ใน Sidebar เพื่อเริ่มวิเคราะห์")
 
 with tabs[1]:
     if data_dict:
-        sel = st.selectbox("Analyze:", list(data_dict.keys()))
+        sel = st.selectbox("Analyze Asset:", list(data_dict.keys()))
         df_p = data_dict[sel]
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='SL', line=dict(color='red', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Vol', marker_color='#c0c0c0', opacity=0.6), row=3, col=1)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#c0c0c0', opacity=0.6), row=3, col=1)
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -171,14 +170,16 @@ with tabs[2]:
                 curr_l = "USD" if not asset.endswith(".BK") else "THB"
                 pnl = (cp - info['entry']) * info['qty']
                 p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": f"{pnl:,.2f} {curr_l}", "Status": "✅ HOLD" if cp > sl else "🚨 EXIT"})
-        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        if p_list:
+            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+            if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
     st.header("🧪 Strategy Backtest (1-Year)")
+    st.caption("⚠️ ผลการทดสอบย้อนหลังเป็นเพียงการจำลองเพื่อดู Win Rate ของระบบ")
     sel_bt = st.selectbox("เลือกสินทรัพย์เพื่อทดสอบ:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
-        df_bt = data_dict[sel_bt].iloc[-252:].copy() # ย้อนหลังประมาณ 1 ปี
+        df_bt = data_dict[sel_bt].iloc[-252:].copy() 
         balance = capital; pos = 0; trades = []; entry_p = 0
         for i in range(1, len(df_bt)):
             c_bt, p_bt = df_bt.iloc[i], df_bt.iloc[i-1]
@@ -203,7 +204,7 @@ with tabs[3]:
                 c3.metric("Final Balance", f"{balance:,.2f}")
                 td_df['Equity'] = td_df['PnL'].cumsum() + capital
                 fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#00ff00')))
-                fig_bt.update_layout(title="Equity Curve (THB Growth)", template="plotly_dark")
+                fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt} (Equity Curve)", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
             else: st.info("ไม่มีสัญญาณปิดเทรดในช่วงปีที่ผ่านมา")
         else: st.info("ไม่พบสัญญาณเข้าเทรดที่ตรงเงื่อนไข")
@@ -219,22 +220,53 @@ with tabs[4]:
     with col_r:
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
-            st.metric("Total Risk (THB)", f"{t_risk:,.2f}")
+            st.metric("Total Portfolio Risk (THB)", f"{t_risk:,.2f}")
             st.progress(min(t_risk / capital, 1.0) if capital > 0 else 0)
+            st.caption(f"Risk Utilization: {(t_risk/capital)*100:.2f}% of Capital")
 
 with tabs[5]:
-    st.markdown("### 📖 Guide & Logic")
-    st.info("ระบบนี้ใช้สถิติในการนำทาง ไม่ใช่การคาดเดา")
-    st.markdown("""
-    * **Target Qty:** คำนวณจากระยะห่างของราคาปัจจุบันกับ Stop-Loss (ATR Based) เพื่อให้คุณเสียเงินไม่เกินเป้าหมายหากราคาหลุด SL
-    * **Exit Signal:** ระบบแนะนำให้ออกเมื่อราคาหลุดแนวรับความผันผวน (SL) หรือ RSI สูงเกิน 80 (Overbought)
-    * **Backtest:** ใช้ข้อมูลย้อนหลัง 252 แท่งเทียน (1 ปีการเงิน) เพื่อทดสอบประสิทธิภาพกลยุทธ์
-    """)
+    st.header("📖 คู่มือสำหรับมือใหม่ (Step-by-Step Guide)")
+    st.info("💡 ระบบนี้ช่วยคุมความเสี่ยงด้วยสถิติ ไม่ใช่การคาดเดา")
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.markdown("""
+        ### 1️⃣ การตั้งค่า (Setup)
+        * **Capital:** เงินต้นทั้งหมดของคุณ (THB)
+        * **Risk per Trade:** จำนวนเงินที่ยอมเสียได้ต่อไม้ (แนะนำ 1%) ระบบจะคำนวณจำนวนหุ้นให้เอง
+        ### 2️⃣ การเข้าซื้อ (Entry)
+        เมื่อเห็นสัญญาณ **🟢 ACCUMULATE**:
+        * **Trend:** ราคาต้องอยู่เหนือเส้น SMA 200 (ขาขึ้น)
+        * **Pullback:** RSI < 45 แปลว่าราคาย่อตัวลงมาให้เก็บ
+        * **Volume:** มีแรงซื้อเข้าหนาแน่น (Volume Ratio > 1.2)
+        * **Action:** ซื้อตามจำนวนในช่อง **Target Qty** ทันที
+        """)
+    with col_g2:
+        st.markdown("""
+        ### 3️⃣ การตั้งจุดตัดขาดทุน (Stop-Loss)
+        * **SL:** ระบบใช้ค่า ATR (ความผันผวนจริง) คำนวณให้
+        * **วินัย:** หากราคาปิดแท่งวันต่ำกว่า **เส้นประสีแดง** ต้องขายทิ้งทันที!
+        ### 4️⃣ การขายทำกำไร (Take Profit)
+        * เมื่อเห็นสัญญาณ **💰 DISTRIBUTION**: แปลว่า RSI > 80 (ราคาตึงตัวมาก) แนะนำให้ขายล็อกกำไร
+        """)
 
 with tabs[6]:
-    st.header("🧠 Architecture v2.6")
-    st.markdown("""
-    * **Backtest Engine:** จำลองคำสั่งซื้อขายจริงย้อนหลัง โดยคำนวณกำไรสะสมเป็นเงินบาท (Equity Curve)
-    * **Live FX Sync:** เชื่อมต่อ API `USDTHB=X` อัตโนมัติ เพื่อความแม่นยำในการบริหารความเสี่ยงข้ามสกุลเงิน
-    * **Resilience:** ระบบจัดการค่าว่าง (NaN) และข้อมูลหุ้นใหม่ด้วย `min_periods` และ `ffill/bfill`
-    """)
+    st.header("🧠 โครงสร้างและตรรกะระบบ (System Logic)")
+    arch_c1, arch_c2 = st.columns(2)
+    with arch_c1:
+        st.markdown(f"""
+        #### ⚙️ ข้อมูลและการจัดการ
+        * **Bulk Engine:** ดึงข้อมูล 3 ปี เพื่อให้ SMA 200 มีความแม่นยำสูงสุด
+        * **Live FX Sync:** เชื่อมต่อ `USDTHB=X` (ปัจจุบัน: **{LIVE_USDTHB:.2f}**) เพื่อบริหารความเสี่ยงข้ามสกุลเงิน
+        * **Resilience:** ใช้ `min_periods=1` และ `ffill/bfill` ป้องกันข้อมูลหายหรือ IPO ใหม่
+        """)
+        st.markdown("#### 📐 สูตร Position Sizing")
+        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
+    with arch_c2:
+        st.markdown("""
+        #### 📈 Indicators & Tech
+        * **Wilder's RSI:** สูตร EMA-based ที่เสถียรกว่า RSI ปกติ
+        * **ATR Trailing Stop:** จุดหนีที่ขยับตามความผันผวนจริงของตลาด
+        * **Performance Analytics:** ระบบคำนวณ Win Rate และ Equity Curve ย้อนหลัง 1 ปี (252 Trading Days)
+        """)
+    st.divider()
+    st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
