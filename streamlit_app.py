@@ -70,6 +70,7 @@ def fetch_all_data(tickers):
             else: df = raw_data.copy()
             if df.empty or len(df) < 30: continue
             
+            # Basic Indicators
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -78,20 +79,20 @@ def fetch_all_data(tickers):
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14, min_periods=1).mean()
-            df['SL'] = df['Close'] - (df['ATR'] * 2.5)
             
-            # --- NEW: Dynamic Trailing Stop ---
-            sl_values = df['SL'].values
-            close_values = df['Close'].values
-            trailing_sl = np.zeros_like(sl_values)
-            trailing_sl[0] = sl_values[0]
-            for i in range(1, len(sl_values)):
-                if close_values[i-1] > trailing_sl[i-1]:
-                    trailing_sl[i] = max(trailing_sl[i-1], sl_values[i])
+            # Dynamic Trailing Stop Logic
+            df['Base_SL'] = df['Close'] - (df['ATR'] * 2.5)
+            sl_vals = df['Base_SL'].values
+            close_vals = df['Close'].values
+            trailing_sl = np.zeros_like(sl_vals)
+            trailing_sl[0] = sl_vals[0]
+            for i in range(1, len(sl_vals)):
+                # วิธีคิด: ถ้าวันก่อนหน้าราคาปิดสูงกว่า SL เดิม ให้เลื่อน SL ขึ้นได้ (Lock กำไร) แต่ห้ามเลื่อนลง
+                if close_vals[i-1] > trailing_sl[i-1]:
+                    trailing_sl[i] = max(trailing_sl[i-1], sl_vals[i])
                 else:
-                    trailing_sl[i] = sl_values[i]
+                    trailing_sl[i] = sl_vals[i]
             df['Trailing_SL'] = trailing_sl
-            # ----------------------------------
 
             df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
@@ -120,32 +121,26 @@ results = []
 for ticker in final_watchlist:
     if ticker not in data_dict or data_dict[ticker].empty: continue
     df = data_dict[ticker]
-    if len(df) < 2: continue
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
+    
+    # Scanner Logic
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
-    
     if is_above_sma and is_above_mid and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
     elif not is_above_sma: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
+    # Position Sizing Logic
     risk_cash_thb = capital * (risk_pct / 100)
-    sl_gap = max(p - curr['Trailing_SL'], 0.01) # เปลี่ยนมาใช้ Trailing_SL
+    sl_gap = max(p - curr['Trailing_SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
-    
-    # --- NEW: Board Lot Auto-Rounding ---
     raw_qty = (risk_cash_thb / (LIVE_USDTHB if is_usd else 1)) / sl_gap
+    
     if p > curr['Trailing_SL']:
-        if is_usd:
-            qty = int(raw_qty) # US/Crypto ซื้อเป็นหน่วยหลักได้
-        else:
-            qty = int(raw_qty // 100) * 100 # หุ้นไทยปัดเศษหลักร้อย (Board Lot)
-            if qty == 0 and raw_qty > 0: qty = 0 # ถ้าความเสี่ยงน้อยเกินไปจนซื้อไม่ได้ 100 หุ้น
-    else:
-        qty = 0
-    # ------------------------------------
+        qty = int(raw_qty) if is_usd else int(raw_qty // 100) * 100 # Board Lot Rounding
+    else: qty = 0
 
     results.append({"Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), 
                     "Target Qty": qty, "Trailing SL": round(curr['Trailing_SL'], 2), "Currency": "USD" if is_usd else "THB"})
@@ -166,7 +161,7 @@ with tabs[1]:
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='Trailing SL', line=dict(color='red', dash='dot')), row=1, col=1) # อัปเดตกราฟเป็น Trailing_SL
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['Trailing_SL'], name='Trailing SL', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#c0c0c0', opacity=0.6), row=3, col=1)
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False)
@@ -217,26 +212,15 @@ with tabs[3]:
             td_df = pd.DataFrame([t for t in trades if "PnL" in t])
             if not td_df.empty:
                 td_df['Equity'] = td_df['PnL'].cumsum() + capital
-                
-                # --- NEW: Risk-Adjusted Metrics ---
                 td_df['Return'] = td_df['Equity'].pct_change().fillna(0)
-                # Sharpe Ratio (คิด Annualized เบื้องต้นที่ 252 วันเทรด)
-                std_dev = td_df['Return'].std()
-                sharpe = (td_df['Return'].mean() / std_dev) * np.sqrt(252) if std_dev != 0 else 0
-                
-                # Max Drawdown
-                rolling_max = td_df['Equity'].cummax()
-                drawdown = (td_df['Equity'] - rolling_max) / rolling_max
-                max_dd = drawdown.min() * 100
-
+                sharpe = (td_df['Return'].mean() / td_df['Return'].std()) * np.sqrt(252) if td_df['Return'].std() != 0 else 0
+                max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric("Win Rate", f"{(len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100:.1f}%")
                 c2.metric("Total P/L (THB)", f"{td_df['PnL'].sum():,.2f}")
                 c3.metric("Final Balance", f"{balance:,.2f}")
                 c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
                 c5.metric("Max Drawdown", f"{max_dd:.2f}%", delta_color="inverse")
-                # ----------------------------------
-
                 fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#00ff00')))
                 fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt}", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
@@ -252,67 +236,69 @@ with tabs[4]:
             fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
             fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig_corr, use_container_width=True)
-        else: st.info("เพิ่ม Ticker มากกว่า 1 ตัวเพื่อดูความสัมพันธ์")
     with col_r:
-        st.write("") 
-        st.write("")
-        st.write("")
-        st.markdown("##### 🛡️ Portfolio Exposure")
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['Trailing_SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
             risk_util = (t_risk / capital) * 100 if capital > 0 else 0
             st.metric("Total Risk", f"{t_risk:,.2f} THB")
             st.write(f"Risk Utilization: **{risk_util:.2f}%**")
             st.progress(min(risk_util / 100, 1.0))
-            st.caption("แนะนำ: ความเสี่ยงรวมไม่ควรเกิน 5-10% ของเงินต้น")
-            st.divider()
-            st.write("🔧 **System Health**")
-            st.write("• Data Link: ✅ Active")
-            st.write(f"• FX Sync: ✅ {LIVE_USDTHB:.2f}")
-        else: st.warning("ยังไม่มีข้อมูลใน Portfolio")
 
 with tabs[5]:
-    st.header("📖 คู่มือ Step-by-Step")
-    st.info("💡 เน้นรักษาวินัยและการคุมความเสี่ยง (Risk Management)")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("""
-        ### 1️⃣ เริ่มต้น (Setup)
-        * **Capital:** เงินต้นทั้งหมดที่คุณมี (บาท)
-        * **Risk per Trade:** เปอร์เซ็นต์ที่ยอมเสียได้ต่อหนึ่งไม้ (แนะนำ 1%)
-        ### 2️⃣ การเข้าซื้อ (Entry)
-        เมื่อเห็น **🟢 ACCUMULATE**:
-        * **Trend:** ราคา > SMA 200 (ขาขึ้น)
-        * **RSI:** < 45 (ราคาย่อตัว ไม่ไล่ราคา)
-        * **Volume:** Ratio > 1.2 (มีแรงซื้อหนาแน่น)
-        * **Action:** ซื้อตามจำนวน **Target Qty**
-        """)
-    with col_g2:
-        st.markdown("""
-        ### 3️⃣ การตัดขาดทุน (Trailing Stop-Loss)
-        * **วินัย:** หากราคาหลุดเส้นประสีแดงในกราฟ **ต้องขายทันที** (เส้นนี้จะยกตัวขึ้นตามราคาเพื่อล็อกกำไรให้คุณ)
-        ### 4️⃣ การทำกำไร (Take Profit)
-        * **Distribution:** เมื่อ RSI > 80 ราคาตึงตัวมาก ควรแบ่งขาย
-        """)
+    st.header("📖 คู่มือ Step-by-Step (The Quant Methodology)")
+    st.info("💡 ระบบนี้ถูกออกแบบมาเพื่อรักษาวินัยและการคุมความเสี่ยง (Risk Management) เป็นหลัก")
+    
+    st.markdown("""
+    ### 1️⃣ การเตรียมตัว (Setup)
+    * **Capital:** เงินต้นทั้งหมดที่คุณมี (บาท) เพื่อใช้เป็นฐานในการคำนวณไม้เทรด
+    * **Risk per Trade:** เปอร์เซ็นต์เงินต้นที่ยอมเสียได้ต่อหนึ่งไม้ (แนะนำ 1%) ระบบจะใช้ค่านี้คำนวณจำนวนหุ้นให้สัมพันธ์กับระยะ Stop-Loss
+    
+    ### 2️⃣ กลยุทธ์การเข้าซื้อ (Entry Strategy)
+    เมื่อเห็นสถานะ **🟢 ACCUMULATE** ในหน้า Scanner:
+    * **Trend:** ราคาต้องยืนเหนือ SMA 200 (ขาขึ้นชัดเจน)
+    * **RSI:** ต่ำกว่า 45 แปลว่า "ราคาย่อตัวลงมาในรอบขาขึ้น" (ซื้อตอนย่อ ไม่ไล่ราคา)
+    * **Volume:** Ratio > 1.2 แปลว่า "เริ่มมีแรงซื้อหนาแน่นผิดปกติ" กลับเข้ามา
+    * **Action:** ซื้อตามจำนวนที่ระบบระบุใน **Target Qty**
+    
+    ### 3️⃣ กลยุทธ์การถือครองและตัดขาดทุน (Trailing Stop-Loss)
+    * **วินัย:** หากราคาหลุด **เส้นประสีแดง** ในหน้า Deep-Dive หรือระบบขึ้นไฟแดง `🚨 EXIT` ต้องขายทันที
+    * **Trailing SL:** เส้นนี้จะขยับขึ้นตามราคาหุ้นเมื่อหุ้นขึ้น (Lock กำไร) แต่จะไม่ขยับลงตามราคาหุ้นเมื่อหุ้นตก (ตัดขาดทุน)
+    
+    ### 4️⃣ กลยุทธ์การทำกำไร (Take Profit)
+    * **Distribution:** เมื่อ RSI ทะลุ 80 แปลว่าราคาเริ่มตึงตัว (Overbought) ควรแบ่งขายทำกำไร
+    """)
 
 with tabs[6]:
-    st.header("🧠 System Logic (สำหรับมือใหม่)")
-    arch_c1, arch_c2 = st.columns(2)
-    with arch_c1:
-        st.markdown(f"""
-        #### ⚙️ Data Engine
-        * **Bulk Fetching:** ดึงข้อมูลย้อนหลัง 3 ปีเพื่อให้เส้นค่าเฉลี่ยแม่นยำ
-        * **Live FX Sync:** ใช้ค่าเงินสดจากตลาด (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
-        * **Resilience:** ระบบเติมข้อมูลว่าง (NaN) อัตโนมัติ ป้องกันแอปค้าง
+    st.header("🧠 System Logic (ตรรกะเบื้องหลังและคณิตศาสตร์)")
+    
+    col_logic1, col_logic2 = st.columns(2)
+    with col_logic1:
+        st.subheader("⚙️ Data & Indicators")
+        st.write("""
+        * **Live FX Sync:** ระบบดึงอัตราแลกเปลี่ยน USDTHB นาทีต่อนาที เพื่อคำนวณ 'อำนาจซื้อ' ในตลาดต่างประเทศให้แม่นยำที่สุด
+        * **Wilder's RSI:** ใช้สูตร Exponential Moving Average เพื่อลดสัญญาณหลอก (False Signals) เมื่อเทียบกับ RSI ทั่วไป
+        * **Dynamic ATR Stop:** ใช้ค่า ATR (ความผันผวนจริง) คูณด้วย 2.5 เพื่อหาจุด Stop-Loss ที่ไม่อึดอัดเกินไป
         """)
-        st.markdown("#### 📐 สูตรคำนวณไม้เทรด")
-        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
-    with arch_c2:
-        st.markdown("""
-        #### 📈 Indicators
-        * **Wilder's RSI:** สูตรพิเศษที่เสถียรกว่า RSI ทั่วไป ลดสัญญาณหลอก
-        * **Dynamic ATR Stop:** คำนวณระยะหนีจากความผันผวนจริง และยกตัวตามกำไร (Trailing)
-        * **Performance:** ระบบทดสอบย้อนหลัง 1 ปี พร้อมดู Sharpe Ratio & Max Drawdown
+        st.markdown("#### 📐 สูตรคำนวณไม้เทรด (Position Sizing)")
+        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - Trailing\,SL}")
+        st.caption("สูตรนี้ช่วยให้ไม่ว่าหุ้นจะผันผวนแค่ไหน ถ้าคุณแพ้ คุณจะเสียเงินเท่าเดิมเสมอ (1% ของพอร์ต)")
+
+    with col_logic2:
+        st.subheader("📊 Performance Analytics")
+        st.write("""
+        * **Sharpe Ratio:** วัดว่ากำไรที่คุณได้ คุ้มค่าความเสี่ยงไหม (ยิ่งสูง = กำไรอย่างสม่ำเสมอ)
+        * **Max Drawdown:** บอกจุดที่เงินทุนเคยติดลบหนักที่สุดในอดีต เพื่อประเมินความเสี่ยงเชิงสถิติ
+        * **Board Lot Rounding:** ระบบจะปัดเศษหุ้นไทย (.BK) ให้เหลือหลัก 100 เสมอ เพื่อให้สามารถส่งคำสั่งซื้อในตลาด SET ได้จริง
         """)
+        st.divider()
+        st.markdown("#### 🛡️ Trailing Stop Logic")
+        st.code("""
+if New_SL > Old_SL:
+    SL = New_SL
+else:
+    SL = Old_SL
+        """, language='python')
+        st.caption("ตรรกะ 'กำแพงขยับได้' ที่จะยกขึ้นตามราคากำไรเท่านั้น")
+
     st.divider()
     st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
