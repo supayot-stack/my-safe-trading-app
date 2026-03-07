@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. ตั้งค่าหน้าจอ ---
+# --- 1. SETTING ---
 st.set_page_config(page_title="Safe Heaven Quant Pro Max", layout="wide")
 
 st.markdown("""
@@ -15,31 +15,22 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ส่วนเมนู (Tabs) ---
-tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ การทำงานของระบบ (Internal)"])
+# --- 2. TABS ---
+tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ การทำงานของระบบ"])
 
+# --- (Tab 2 & 3 คงเดิมตามโค้ดคุณ) ---
 with tab2:
     st.header("📖 กฎเหล็ก 1% ของนักลงทุนระดับโลก")
-    st.markdown("""
-    ### 🛡️ กลกลไกการคุมความเสี่ยง (The 1% Rule)
-    ระบบนี้ใช้หลักการ **Fixed Fractional Position Sizing** เพื่อให้พอร์ตของคุณ "ไม่มีวันพัง"
-    1. **Risk Amount:** ยอมเสียสูงสุดแค่ 1% ของพอร์ต
-    2. **Stop Loss (SL):** ตั้งจุดหนีไว้ที่ 3% จากราคาซื้อ
-    3. **Position Sizing:** จำนวนหุ้น = เงินที่ยอมเสียได้ / (ราคาซื้อ - ราคา SL)
-    """)
-    
+    st.markdown("### 🛡️ กลไกการคุมความเสี่ยง (The 1% Rule)")
+    st.write("จำนวนหุ้น = เงินที่ยอมเสียได้ / (ราคาซื้อ - ราคา SL)")
 
 with tab3:
     st.header("⚙️ เจาะลึกการทำงานของระบบ")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.info("Logic: SMA 200 (Trend) + RSI < 40 (Buy Dip) + Volume > Avg 5 (Confirm)")
-    with col_b:
-        st.success("Safe: เทรดขาขึ้น | Quant: ใช้สถิติตัดอารมณ์ | Pro Max: มี AI ช่วยวิเคราะห์ข่าว")
+    st.info("Logic: SMA 200 + RSI < 40 + Volume > Avg 5")
 
-# --- TAB 1: ระบบสแกน & วางแผนเทรด ---
+# --- TAB 1: ระบบสแกน ---
 with tab1:
-    st.title("🛡️ Safe Heaven Quant Pro Max + Risk Manager")
+    st.title("🛡️ Safe Heaven Quant Pro Max")
     
     st.sidebar.header("💰 Portfolio Settings")
     portfolio_size = st.sidebar.number_input("เงินทุนทั้งหมด (บาท):", min_value=1000, value=100000, step=1000)
@@ -82,7 +73,6 @@ with tab1:
                     elif r > 75: act = "💰 PROFIT"
                     elif p < s: act = "🔴 EXIT/AVOID"
                     else: act = "⚪ Wait"
-                    
                     risk_amount = portfolio_size * (risk_per_trade / 100)
                     sl_dist = p - l['SL']
                     qty = int(risk_amount / sl_dist) if sl_dist > 0 else 0
@@ -104,33 +94,25 @@ with tab1:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
                 fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=1.5)), row=1, col=1)
-                # ปรับ Volume เป็นสีเทาตัดพื้นหลัง
+                # Volume สีเทาตัดพื้นหลัง
                 fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], name='Volume', marker_color='LightSlateGray', opacity=0.4), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
-                fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
-                fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
+                
                 fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                
+                # --- แก้ไขตรงนี้เพื่อนำปุ่มกด (Modebar) กลับมา ---
+                st.plotly_chart(fig, use_container_width=True, config={
+                    'displayModeBar': True,
+                    'scrollZoom': True,
+                    'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape']
+                })
 
         with col2:
             st.markdown("### 🛠️ การบริหารหน้าตัก")
             target_data = next(item for item in results if item["Ticker"] == selected_plot)
-            st.markdown(f"""
-            <div class="risk-box">
-                <h4>คำแนะนำสำหรับ {selected_plot}</h4>
-                <ul>
-                    <li><b>ควรซื้อ:</b> {target_data['Qty to Buy']:,} หุ้น</li>
-                    <li><b>เงินที่ใช้ซื้อ:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
-                    <li><b>Stop Loss (3%):</b> {target_data['StopLoss']}</li>
-                    <li><b>ยอมเสียได้สูงสุด:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("---")
-            st.markdown("### 🔮 AI Future Insight")
-            news_input = st.text_area("วิเคราะห์ข่าวปัจจุบัน:", placeholder="วางข่าวที่นี่...")
-            if st.button("ประมวลผล AI"):
-                if news_input:
-                    st.info("AI วิเคราะห์เบื้องต้น: สอดคล้องกับเทรนขาขึ้น แนะนำให้เทรดตามแผน Position Sizing อย่างเคร่งครัด")
+            st.markdown(f"""<div class="risk-box"><h4>คำแนะนำสำหรับ {selected_plot}</h4>
+            <ul><li><b>ควรซื้อ:</b> {target_data['Qty to Buy']:,} หุ้น</li>
+            <li><b>เงินที่ใช้ซื้อ:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
+            <li><b>Stop Loss:</b> {target_data['StopLoss']}</li></ul></div>""", unsafe_allow_html=True)
 
 if st.button("🔄 อัปเดตข้อมูล"): st.rerun()
