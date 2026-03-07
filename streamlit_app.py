@@ -8,13 +8,13 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG (ปรับแต่ง Tabs ให้เหมือนในรูปที่สุด) ---
+# --- 1. PRO UI CONFIG ---
 st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0d1117; color: #e1e4e8; }
     
-    /* ปรับแต่ง Tabs ให้ดู Clean และเป็น Flat Design แบบในรูป */
+    /* Clean and Flat Design for Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 15px;
         background-color: transparent;
@@ -27,7 +27,7 @@ st.markdown("""
         padding: 12px 0px !important;
         font-size: 15px !important;
     }
-    /* เมื่อเลือก Tab: ใช้เส้นใต้สีเขียว/ขาว และเปลี่ยนสีตัวอักษร */
+    /* Selected Tab styling */
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;
         background-color: transparent !important;
@@ -35,7 +35,7 @@ st.markdown("""
         font-weight: 500 !important;
     }
     
-    /* สไตล์สำหรับ Metric Card ในหน้า Analytics (ปรับให้เป็นกล่องสีเทาเรียบๆ แบบในรูป) */
+    /* Analytics Metric Card styling */
     .analytics-card {
         background-color: #161b22; 
         padding: 15px; 
@@ -150,7 +150,6 @@ for t in final_watchlist:
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
 
 # --- 6. MAIN DISPLAY ---
-# ใส่ Icon หน้า Tab ให้เหมือนในรูปที่สุด
 tabs = st.tabs(["🏛 Scanner", "📉 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
 
 with tabs[0]:
@@ -219,17 +218,14 @@ with tabs[3]:
             st.metric("Net Terminal Value", f"{balance:,.2f} THB")
             st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
 
-# --- หน้า ANALYTICS HUB ปรับแก้ให้เหมือนรูปที่สุด ---
 with tabs[4]:
     if 'td_df' in locals() and not td_df.empty:
-        # แบ่งเป็น 3 คอลัมน์สมบูรณ์แบบ [1.2, 0.6, 1.2]
         col_left, col_mid, col_right = st.columns([1.2, 0.6, 1.2], gap="large")
         
         with col_left:
             st.markdown("##### 🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
             fig_mc = go.Figure()
-            # ตกแต่งสไตล์กราฟ Monte Carlo ให้ดูหนาแน่นแบบในรูป
             for s in sims:
                 fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.8, color='#58a6ff'), opacity=0.12, showlegend=False))
             fig_mc.update_layout(
@@ -246,7 +242,6 @@ with tabs[4]:
             avg_pnl = td_df['PnL'].mean()
             max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
 
-            # สร้าง Metric Cards ให้เป็นกล่องสีเทาเรียบๆ แบบในรูป
             st.markdown(f"""
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 30px;">
                     <div class="analytics-card">
@@ -270,11 +265,9 @@ with tabs[4]:
 
         with col_right:
             st.markdown("##### 📈 Equity Curve")
-            # แสดง Final Balance ด้านบนกราฟ
             final_val = td_df['Equity'].iloc[-1]
             st.markdown(f"**Final Balance (Net)**: <span style='color:#2ea043; font-size: 18px;'>{final_val:,.2f} THB</span>", unsafe_allow_html=True)
             fig_eq = go.Figure()
-            # ตกแต่งกราฟ Equity Curve ให้มี Fill สีเขียวอ่อนๆ เลียนแบบในรูป
             fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
                                      line=dict(color='#39d353', width=1.5), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.08)'))
             fig_eq.update_layout(
@@ -285,7 +278,6 @@ with tabs[4]:
             )
             st.plotly_chart(fig_eq, use_container_width=True)
 
-        # แถบ Status ด้านล่างสุด
         st.markdown("""
             <div style="background-color: #161b22; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #21262d; margin-top: 20px;">
                 <span style="color: #39d353; font-weight: bold;">✅ System Alpha Verified</span>
