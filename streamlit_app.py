@@ -39,7 +39,7 @@ def format_ticker(ticker):
             return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE ---
+# --- 3. CORE QUANT ENGINE (Enhanced Safety) ---
 @st.cache_data(ttl=1800)
 def get_data(ticker):
     try:
@@ -77,7 +77,8 @@ with st.sidebar:
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Add Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    
+    watchlist_input = st.text_area("Add Tickers (comma separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = [format_ticker(t) for t in raw_tickers if format_ticker(t)]
 
@@ -120,6 +121,8 @@ with t1:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty:
         st.dataframe(res_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("กรุณาระบุ Ticker ใน Sidebar")
 
 with t2:
     if data_dict:
@@ -132,19 +135,18 @@ with t2:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
         
-        # --- จุดที่แก้ไข: เปลี่ยน Volume เป็นสีเทาตัดกับพื้นหลัง ---
+        # --- เปลี่ยน Volume เป็นสีเทาสว่าง ---
         fig.add_trace(go.Bar(
             x=df_p.index, 
             y=df_p['Volume'], 
             name='Volume',
-            marker_color='#4a4a4a',  # สีเทาเข้ม (Muted Gray)
-            opacity=0.8
+            marker_color='#808080',  # เทาสว่าง (Light Gray)
+            opacity=0.6              # ปรับความโปร่งใสเพื่อให้ดูนุ่มนวล
         ), row=3, col=1)
         
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
-# ส่วนที่เหลือคงเดิม (t3, t4, t5)
 with t3:
     st.subheader("💼 Portfolio Management")
     with st.expander("➕ บันทึกไม้เทรด"):
@@ -156,15 +158,16 @@ with t3:
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio)
             st.rerun()
+
     if st.session_state.my_portfolio:
-        p_list = []
+        p_data = []
         for asset, info in st.session_state.my_portfolio.items():
             match = res_df[res_df['Asset'] == asset]
             if not match.empty:
                 cp = match.iloc[0]['Price']; sl = match.iloc[0]['Stop-Loss']
                 pnl = (cp - info['entry']) * info['qty']
-                p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": "✅ HOLD" if cp > sl else "🚨 EXIT"})
-        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+                p_data.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": "✅ HOLD" if cp > sl else "🚨 EXIT NOW"})
+        st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
         if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with t4:
@@ -175,7 +178,7 @@ with t4:
         fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1))
         fig_corr.update_layout(height=400, template="plotly_dark")
         st.plotly_chart(fig_corr, use_container_width=True)
-    else: st.info("เพิ่มหุ้นอย่างน้อย 2 ตัวเพื่อดู Correlation")
+    else: st.info("เพิ่มหุ้นอย่างน้อย 2 ตัว")
 
 with t5:
-    st.markdown("### 📖 Guide\n1. **Scanner:** หาหุ้นเขียว\n2. **Deep-Dive:** ดูกราฟ\n3. **Portfolio:** คุมความเสี่ยง")
+    st.markdown("### 📖 Guide\n1. Scanner หาจุดสะสม\n2. Deep-Dive วิเคราะห์กราฟ\n3. Portfolio คุมความเสี่ยง")
