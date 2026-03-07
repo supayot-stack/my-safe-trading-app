@@ -18,18 +18,16 @@ st.markdown("""
 tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ การทำงานของระบบ"])
 
 with tab2:
-    st.header("📖 กลไกการคุมความเสี่ยง (The 1% Rule)")
-    st.markdown("ระบบคำนวณจำนวนหุ้นให้สัมพันธ์กับเงินต้น เพื่อให้คุณเสียไม่เกิน 1% ต่อการเทรดหนึ่งครั้ง")
+    st.header("📖 กฎเหล็กความเสี่ยง 1%")
+    st.markdown("ระบบคำนวณจำนวนหุ้นเพื่อจำกัดผลขาดทุนสูงสุดไว้ที่ 1% ของเงินต้นต่อหนึ่งการเทรด")
 
 with tab3:
     st.header("⚙️ System Internal")
-    st.info("Logic: SMA200 Trend Filter + RSI Buy on Dip + Silver Volume Analysis")
+    st.info("Logic: SMA200 Trend + RSI Buy on Dip + Silver Volume Filter")
 
-# --- 3. ระบบหลัก ---
 with tab1:
     st.title("🛡️ Safe Heaven Quant Pro Max")
     
-    # Sidebar
     st.sidebar.header("💰 Portfolio Settings")
     portfolio_size = st.sidebar.number_input("เงินทุนทั้งหมด (บาท):", min_value=1000, value=100000, step=1000)
     risk_per_trade = st.sidebar.slider("ความเสี่ยงต่อการเทรด (%):", 0.5, 5.0, 1.0)
@@ -38,9 +36,40 @@ with tab1:
     st.sidebar.header("🔍 Assets")
     default_assets = ["NVDA", "AAPL", "TSLA", "BTC-USD", "SET50.BK"]
     selected_assets = st.sidebar.multiselect("เลือกหุ้น:", options=list(set(default_assets + ["MSFT", "GOOGL", "PTT.BK", "CPALL.BK"])), default=default_assets)
-    
-    # ฟังก์ชันดึงข้อมูล (แก้ไข Syntax Error เรียบร้อย)
+
     def get_data(ticker, interval="1d", data_period="2y"):
         try:
-            # รายชื่อหุ้นไทยเพื่อเติม .BK อัตโนมัติ
-            thai_tickers = ["PT
+            # แก้ไข Syntax Error: เขียนให้อยู่ในบรรทัดเดียวเพื่อความปลอดภัย
+            thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
+            if ticker in thai_tickers and "." not in ticker:
+                ticker += ".BK"
+            
+            df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
+            if df.empty or len(df) < 200:
+                return None
+            
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            
+            df['SMA200'] = df['Close'].rolling(200).mean()
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+            df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
+            df['SL'] = df['Close'] * 0.97
+            return df
+        except:
+            return None
+
+    results = []
+    if selected_assets:
+        with st.spinner('กำลังคำนวณ...'):
+            for t in selected_assets:
+                df = get_data(t)
+                if df is not None:
+                    l = df.iloc[-1]
+                    p, r, s, v, va = l['Close'], l['RSI'], l['SMA200'], l['Volume'], l['Vol_Avg5']
+                    
+                    if p > s and r < 40 and v > va: act = "🟢 STRONG BUY"
+                    elif r > 75:
