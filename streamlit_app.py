@@ -22,15 +22,8 @@ with tab2:
     st.header("📖 กฎเหล็ก 1% ของนักลงทุนระดับโลก")
     st.markdown("""
     ### 🛡️ ทำอย่างไรให้ "ห้ามพัง" (Zero Ruin)
-    1. **Never Bet All:** อย่าลงเงินทั้งหมดในหุ้นตัวเดียว
-    2. **The 1% Rule:** ในแต่ละการเทรด ถ้าผิดทาง (Stop Loss) คุณควรเสียเงินไม่เกิน **1% ของเงินต้นทั้งหมด**
-    3. **Position Sizing:** คำนวณจำนวนหุ้นที่จะซื้อจากระยะห่างของจุด Stop Loss
-    
-    ---
-    ### 🚦 ตัวอย่างการคำนวณ
-    * มีเงิน 100,000 บาท ยอมเสียได้ 1% = 1,000 บาท
-    * ซื้อหุ้นราคา 100 บาท Stop Loss ที่ 97 บาท (ส่วนต่าง 3 บาท)
-    * จำนวนหุ้นที่ซื้อได้ = 1,000 / 3 = **333 หุ้น**
+    1. **The 1% Rule:** ในแต่ละการเทรด ถ้าผิดทาง คุณควรเสียเงินไม่เกิน **1% ของเงินต้นทั้งหมด**
+    2. **Position Sizing:** จำนวนหุ้น = เงินที่ยอมเสียได้ / (ราคาซื้อ - ราคา Stop Loss)
     """)
 
 with tab1:
@@ -50,7 +43,7 @@ with tab1:
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
 
-    # --- 4. DATA ENGINE (Quantitative Indicators) ---
+    # --- 4. DATA ENGINE (FIXED RSI SYNTAX) ---
     def get_data(ticker, interval, data_period):
         try:
             thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
@@ -60,9 +53,12 @@ with tab1:
             if df.empty or len(df) < 200: return None
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
-            # Indicators
+            # SMA 200
             df['SMA200'] = df['Close'].rolling(200).mean()
+            
+            # RSI 14 (FIXED LINE)
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            df['RSI'] = 100 - (100 / (1 + (gain / (loss +
+            # ซ่อมวงเล็บตรงนี้:
+            df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
