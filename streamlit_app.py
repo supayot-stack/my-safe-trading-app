@@ -6,21 +6,20 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import os
-from datetime import datetime
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Ultimate Quant Terminal", layout="wide")
+st.set_page_config(page_title="Gemini Master Quant Terminal", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
     .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
-    .market-on { color: #3fb950; font-weight: bold; }
-    .market-off { color: #f85149; font-weight: bold; }
+    .highlight-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 10px; border: 1px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE ---
+# --- 2. DATA PERSISTENCE ENGINE ---
 DB_FILE = "portfolio_data.json"
+
 def load_portfolio():
     if os.path.exists(DB_FILE):
         try:
@@ -38,102 +37,141 @@ if 'my_portfolio' not in st.session_state:
 @st.cache_data(ttl=1800)
 def get_data(ticker):
     try:
-        t_map = {"PTT": "PTT.BK", "CPALL": "CPALL.BK", "DELTA": "DELTA.BK", "SET": "^SET.BK", "SP500": "^GSPC"}
-        ticker_final = t_map.get(ticker, ticker)
+        ticker_final = ticker
+        thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF", "PTTEP", "OR", "DELTA", "KTB"]
+        if ticker in thai_list: ticker_final = ticker + ".BK"
+        
         df = yf.download(ticker_final, period="2y", interval="1d", auto_adjust=True, progress=False)
-        if df.empty: return None
+        if df.empty or len(df) < 100: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # Core Indicators
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+        
         tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
         df['SL'] = df['Close'] - (df['ATR'] * 2.5)
-        df['Vol_Ratio'] = df['Volume'] / df['Volume'].rolling(20).mean()
+        df['Volatility'] = (df['ATR'] / df['Close']) * 100
+        df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
+        df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
         return df.dropna()
     except: return None
 
-# --- 4. MARKET REGIME CHECK ---
-with st.spinner("Checking Market Weather..."):
-    sp500 = get_data("SP500")
-    set_idx = get_data("SET")
-    m_status = "BULLISH" if sp500['Close'].iloc[-1] > sp500['SMA200'].iloc[-1] else "BEARISH"
-    m_color = "market-on" if m_status == "BULLISH" else "market-off"
-
-# --- 5. SIDEBAR ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
-    st.title("🏦 Ultimate Quant")
-    st.markdown(f"Market Regime: <span class='{m_color}'>{m_status}</span>", unsafe_allow_html=True)
+    st.title("🏦 Personal Quant")
     capital = st.number_input("Total Capital (THB):", value=1000000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 2.0, 1.0)
     st.divider()
-    watchlist = st.multiselect("Watchlist:", ["NVDA", "AAPL", "TSLA", "BTC-USD", "ETH-USD", "GOLD", "PTT", "CPALL", "DELTA"], default=["NVDA", "BTC-USD"])
-    final_watchlist = list(set(watchlist))
+    default_list = ["NVDA", "AAPL", "TSLA", "MSTR", "BTC-USD", "ETH-USD", "GOLD", "PTT", "CPALL", "DELTA", "GULF", "KTB"]
+    watchlist = st.multiselect("Watchlist Pool:", default_list, default=default_list)
+    custom = st.text_input("➕ Add Ticker (e.g. TSLA):").upper().strip()
+    final_watchlist = list(set(watchlist + ([custom] if custom else [])))
 
-# --- 6. PROCESSING & TABS ---
+# --- 5. DATA PROCESSING ---
 results = []
-close_prices = {}
-for t in final_watchlist:
-    df = get_data(t)
-    if df is not None:
-        l = df.iloc[-1]
-        close_prices[t] = df['Close']
-        results.append({"Asset": t, "Price": l['Close'], "RSI": l['RSI'], "Vol_Ratio": l['Vol_Ratio'], "SL": l['SL']})
+data_dict = {}
+with st.spinner('Scanning Market Data...'):
+    for ticker in final_watchlist:
+        df = get_data(ticker)
+        if df is not None:
+            data_dict[ticker] = df
+            l = df.iloc[-1]
+            p, r, s200, s50, vr, vola = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio'], l['Volatility']
+            
+            # Logic: Signal
+            if p > s200 and p > s50 and r < 45 and vr > 1.2: sig = "🟢 ACCUMULATE"
+            elif r > 75: sig = "💰 DISTRIBUTION"
+            elif p < s200: sig = "🔴 BEARISH"
+            else: sig = "⚪ NEUTRAL"
+
+            # Risk Management
+            risk_cash = capital * (risk_pct / 100)
+            sl_gap = p - l['SL']
+            qty = int(risk_cash / sl_gap) if sl_gap > 0 else 0
+
+            results.append({
+                "Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(r, 1), 
+                "Vol_Ratio": vr, "Volatility": vola, "Target Qty": qty, "Stop-Loss": round(l['SL'], 2)
+            })
 
 res_df = pd.DataFrame(results)
-t1, t2, t3, t4 = st.tabs(["🏛 Scanner", "💼 Portfolio & Risk", "📈 Analysis", "🛡 Safety"])
+
+# --- 6. MAIN TERMINAL ---
+t1, t2, t3, t4, t5 = st.tabs(["🏛 Scanner", "🎯 Auto Quant Picks", "📈 Deep-Dive", "💼 Portfolio", "📖 Guide"])
 
 with t1:
-    st.subheader("📊 Scanner Results")
-    st.dataframe(res_df, use_container_width=True, hide_index=True)
+    st.subheader("📊 Market Opportunities")
+    if results:
+        st.dataframe(res_df[["Asset", "Price", "Regime", "RSI", "Target Qty", "Stop-Loss"]], use_container_width=True, hide_index=True)
 
 with t2:
-    st.subheader("💼 Active Portfolio")
-    # Log trade
-    with st.expander("➕ Log Trade"):
-        c1, c2, c3 = st.columns(3)
-        p_asset = c1.selectbox("Asset", final_watchlist)
-        p_entry = c2.number_input("Entry Price")
-        p_qty = c3.number_input("Qty", step=1)
-        if st.button("Save"):
-            st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty, "date": str(datetime.now().date())}
-            save_portfolio(st.session_state.my_portfolio); st.rerun()
-
-    if st.session_state.my_portfolio:
-        p_list = []
-        for a, info in st.session_state.my_portfolio.items():
-            curr = next((x for x in results if x['Asset'] == a), None)
-            if curr:
-                pnl = (curr['Price'] - info['entry']) * info['qty']
-                p_list.append({"Asset": a, "Cost": info['entry'], "Price": curr['Price'], "Qty": info['qty'], "P/L": pnl})
-        
-        st.dataframe(pd.DataFrame(p_list), use_container_width=True)
-        
-        # 🔗 Correlation Secret
-        if len(p_list) > 1:
-            st.markdown("### 🔗 Asset Correlation (Risk Check)")
-            corr = pd.DataFrame({a: close_prices[a] for a in st.session_state.my_portfolio.keys()}).corr()
-            st.write("ถ้าค่าใกล้ 1.0 แปลว่าหุ้นวิ่งเหมือนกันเกินไป เสี่ยง!")
-            st.dataframe(corr.style.background_gradient(cmap='coolwarm'))
+    st.markdown("<div class='highlight-card'><h2>🎯 AI Autonomous Picks (Real-Time)</h2></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("🚀 **Momentum Kings**")
+        mo_king = res_df[res_df['Regime'] != "🔴 BEARISH"].sort_values('RSI', ascending=False).head(3)
+        for _, row in mo_king.iterrows(): st.write(f"**{row['Asset']}** (RSI: {row['RSI']:.1f})")
+    with c2:
+        st.success("🔥 **Volume Surge**")
+        vol_surge = res_df.sort_values('Vol_Ratio', ascending=False).head(3)
+        for _, row in vol_surge.iterrows(): st.write(f"**{row['Asset']}** (Vol: {row['Vol_Ratio']:.2f}x)")
+    with c3:
+        st.warning("⚡ **High Vol (Practice)**")
+        high_vola = res_df.sort_values('Volatility', ascending=False).head(3)
+        for _, row in high_vola.iterrows(): st.write(f"**{row['Asset']}** (Vola: {row['Volatility']:.2f}%)")
 
 with t3:
-    st.subheader("📈 Equity Performance")
-    # Simulate Equity Curve from current holdings
-    if st.session_state.my_portfolio:
-        equity_data = pd.DataFrame({a: close_prices[a] * info['qty'] for a, info in st.session_state.my_portfolio.items()}).sum(axis=1)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=equity_data.index, y=equity_data, name="Portfolio Value", line=dict(color='#3fb950')))
-        fig.update_layout(template="plotly_dark", title="Unrealized Equity Curve (Recent 2Y)")
+    if data_dict:
+        sel = st.selectbox("Analyze Asset:", list(data_dict.keys()))
+        df_p = data_dict[sel]
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
+        fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume'), row=3, col=1)
+        fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
-        
 
 with t4:
-    st.subheader("🛡 Safety First")
-    st.write("สำรองข้อมูลพอร์ตของคุณไว้เสมอ")
-    data_str = json.dumps(st.session_state.my_portfolio)
-    st.download_button("💾 Download Portfolio Backup", data_str, file_name="my_quant_backup.json")
-    if st.button("🗑 Reset All"):
-        save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+    st.subheader("💼 Portfolio & P/L Tracking")
+    with st.expander("➕ บันทึกไม้เทรด (Add Position)"):
+        c1, c2, c3 = st.columns(3)
+        p_asset = c1.selectbox("Asset", final_watchlist)
+        p_entry = c2.number_input("Entry Price", value=0.0)
+        p_qty = c3.number_input("Quantity", value=0)
+        if st.button("Confirm Trade"):
+            st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
+            save_portfolio(st.session_state.my_portfolio)
+            st.rerun()
+
+    if st.session_state.my_portfolio:
+        p_data = []
+        total_v = 0
+        total_pnl = 0
+        for asset, info in list(st.session_state.my_portfolio.items()):
+            curr = next((item for item in results if item["Asset"] == asset), None)
+            if curr:
+                cp = curr["Price"]
+                unrealized = (cp - info['entry']) * info['qty']
+                total_pnl += unrealized
+                total_v += (cp * info['qty'])
+                p_data.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L (THB)": round(unrealized, 2), "Action": "🚨 EXIT" if cp < curr["Stop-Loss"] else "✅ HOLD"})
+        
+        if p_data:
+            st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
+            m1, m2 = st.columns(2)
+            m1.metric("Portfolio Value", f"{total_v:,.2f}")
+            m2.metric("Total Unrealized P/L", f"{total_pnl:,.2f}", delta=f"{total_pnl:,.2f}")
+            if st.button("🗑️ Reset All Data"):
+                st.session_state.my_portfolio = {}; save_portfolio({}); st.rerun()
+    else: st.info("ไม่มีหุ้นในพอร์ต")
+
+with t5:
+    st.write("📖 **Guide:** Scanner บอกจุดเข้า, Auto Picks คัดหุ้นเด่น, Deep-Dive ดูกราฟ, Portfolio คุมกำไร")
