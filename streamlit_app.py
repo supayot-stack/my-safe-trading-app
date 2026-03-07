@@ -14,6 +14,7 @@ st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
     .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; border-left: 5px solid #3b82f6; }
+    .highlight-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 10px; border: 1px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -21,7 +22,7 @@ st.markdown("""
 DB_FILE = "portfolio_data_v2.json"
 BAK_FILE = "portfolio_data_v2.json.bak"
 
-@st.cache_data(ttl=3600) # อัปเดตค่าเงินทุก 1 ชม.
+@st.cache_data(ttl=3600) 
 def get_live_fx():
     try:
         data = yf.download("USDTHB=X", period="1d", interval="1m", progress=False)
@@ -29,7 +30,7 @@ def get_live_fx():
             return float(data['Close'].iloc[-1])
     except:
         pass
-    return 36.5 # Default fallback
+    return 36.5 # Fallback
 
 LIVE_USDTHB = get_live_fx()
 
@@ -51,12 +52,13 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
+    # ระบบ Auto-Suffix สำหรับหุ้นไทยยอดนิยม
     thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_stocks and not ticker.endswith(".BK"):
         return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE ---
+# --- 3. CORE QUANT ENGINE (RELIABILITY FOCUS) ---
 @st.cache_data(ttl=1800)
 def fetch_all_data(tickers):
     if not tickers: return {}
@@ -72,7 +74,7 @@ def fetch_all_data(tickers):
             
             if df.empty or len(df) < 30: continue
             
-            # Indicators with stability fix
+            # Indicators with Resilience Logic (min_periods=1)
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -85,28 +87,28 @@ def fetch_all_data(tickers):
             df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
             
-            df = df.ffill().bfill() 
+            df = df.ffill().bfill() # ป้องกันข้อมูลหายระหว่างแถว
             processed[t] = df
         return processed
     except Exception as e:
         st.error(f"Fetch Error: {e}")
         return {}
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR & LOGIC ---
 if 'my_portfolio' not in st.session_state:
     st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
     st.title("🛡️ Secure Quant Pro v2.5")
-    st.caption(f"Live FX: 1 USD = **{LIVE_USDTHB:.2f} THB**")
+    st.info(f"💵 Live FX Rate: 1 USD = **{LIVE_USDTHB:.2f} THB**")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Add Tickers (NVDA, AAPL, PTT...):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
-# --- 5. DATA PROCESSING ---
+# --- 5. DATA PROCESSING (CURRENCY AWARE) ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 
@@ -117,7 +119,7 @@ for ticker in final_watchlist:
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
     
-    # Logic
+    # Strategy Logic
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
     
@@ -126,7 +128,7 @@ for ticker in final_watchlist:
     elif not is_above_sma: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
-    # Sizing using Live FX
+    # Position Sizing with Live FX
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
@@ -149,7 +151,7 @@ tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Analyt
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("No data found.")
+    else: st.warning("กรุณาระบุ Ticker ใน Sidebar เพื่อเริ่มวิเคราะห์")
 
 with tabs[1]:
     if data_dict:
@@ -205,13 +207,64 @@ with tabs[3]:
             t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
             st.metric("Total Portfolio Risk (THB)", f"{t_risk:,.2f}")
             st.progress(min(t_risk / capital, 1.0) if capital > 0 else 0)
-            st.caption(f"Risk Utilization: {(t_risk/capital)*100:.2f}% of Capital")
+            st.caption(f"Risk Utilization: {(t_risk/capital)*100:.2f}% ของเงินต้น")
+            st.divider()
+            st.write("### 🏗️ Future Modules")
+            for m in ["AI Sentiment Analysis", "Sector Rotation Map", "Advanced Backtester"]: st.checkbox(m, disabled=True)
+
+with tabs[4]:
+    st.markdown("### 📖 Master Quant Terminal Guide")
+    st.info("โปรดอ่านคู่มือนี้เพื่อความเข้าใจในการบริหารความเสี่ยง (Risk Management)")
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.markdown("""
+        #### 1. การตั้งค่าระบบ (Setup)
+        * **Capital:** ใส่เงินต้นทั้งหมด (THB) เพื่อเป็นฐานคำนวณความเสี่ยง
+        * **Risk per Trade:** % ที่ยอมเสียได้ต่อไม้ (แนะนำ 1-2%)
+        * **Tickers:** ใส่ชื่อย่อหุ้น คั่นด้วย `,` (เช่น NVDA, PTT)
+        
+        #### 2. การอ่านสัญญาณ (Signals)
+        * 🟢 **ACCUMULATE:** หุ้นขาขึ้น ย่อตัว RSI < 45 และ Volume เข้า
+        * 💰 **DISTRIBUTION:** ราคาเริ่มตึงตัว (RSI > 80) ระวังแรงขาย
+        * 🔴 **BEARISH:** ขาลงชัดเจน (หลุด SMA200) ไม่ควรมีหุ้น
+        """)
+    with col_g2:
+        st.markdown(f"""
+        #### 3. ระบบคำนวณไม้ (Money Management)
+        * **Target Qty:** จำนวนหุ้นที่ควรซื้อ โดยอิงจากระยะ Stop-Loss
+        * **Multi-Currency:** ระบบใช้ค่าเงิน **{LIVE_USDTHB:.2f} THB/USD** อัตโนมัติ
+        * **Stop-Loss (SL):** เส้นประสีแดงในกราฟคือจุดตาย ห้ามเลื่อนหนี
+        
+        #### 4. การจัดการพอร์ต (Portfolio)
+        * เมื่อซื้อจริง ให้บันทึกใน Tab **Portfolio** เพื่อให้ระบบเฝ้าระวังสัญญาณ EXIT
+        """)
 
 with tabs[5]:
-    st.header("🧠 System Architecture v2.5")
-    st.markdown(f"""
-    ### 🛡️ Safety & Precision Updates
-    1. **Live Currency Engine:** ระบบดึงข้อมูลจาก `USDTHB=X` อัตโนมัติ (ปัจจุบัน: **{LIVE_USDTHB:.2f}**) เพื่อให้ Position Sizing หุ้นนอกแม่นยำที่สุด
-    2. **Multi-Asset Analytics:** คำนวณความเสี่ยงรวมของพอร์ต (Portfolio Risk) โดยแปลงค่าเงินกลับเป็น THB เพื่อให้คุณเห็นความเสียหายสูงสุดที่เป็นไปได้ในสกุลเงินหลัก
-    3. **Resilient Data Processing:** ใช้ `ffill()` และ `bfill()` เพื่อรักษาแถวข้อมูลล่าสุดไว้เสมอ แม้จะมีบางวันที่มีค่า NaN
-    """)
+    st.header("🧠 System Architecture & Quant Logic v2.5")
+    st.write("Decision Support System โครงสร้างทางเทคนิค")
+    arch_1, arch_2 = st.columns(2)
+    with arch_1:
+        st.markdown(f"""
+        #### ⚙️ Data Engine & Persistence
+        * **Bulk Fetching:** ดึงข้อมูล 3 ปีแบบ Batch เพื่อป้องกัน Rate Limit
+        * **Live FX Integration:** เชื่อมต่อ `USDTHB=X` อัตโนมัติ (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
+        * **Fail-Safe DB:** ระบบบันทึก JSON พร้อม Backup `.bak` อัตโนมัติ
+        
+        #### 📈 Technical Quant Core
+        * **Wilder's RSI:** ใช้ EMA ในการคำนวณเพื่อลดสัญญาณหลอก
+        * **Trend Regime:** คัดกรองด้วย SMA 200 (โครงสร้าง) และ SMA 50 (โมเมนตัม)
+        * **Volatility Stop:** คำนวณจาก $Close - (ATR \\times 2.5)$
+        """)
+    with arch_2:
+        st.markdown("""
+        #### 🛡️ Advanced Risk Analytics
+        * **Correlation Matrix:** คำนวณความสัมพันธ์เพื่อเตือนการกระจุกความเสี่ยง
+        * **Portfolio Cash at Risk:** แปลงความเสี่ยงทั้งหมดกลับเป็น THB รวม
+        
+        #### 🔧 Robustness Logic (Anti-Error)
+        * **Min Periods:** ใช้ `min_periods=1` เพื่อให้หุ้นใหม่ (IPO) แสดงผลได้
+        * **Data Imputation:** ใช้ `ffill()` และ `bfill()` เติมช่องว่างข้อมูล
+        * **Zero-Division Shield:** ป้องกันแอปค้างด้วย `.replace(0, np.nan)`
+        """)
+    st.divider()
+    st.caption("Gemini Master Quant v2.5 | Built for Professional Statistical Trading")
