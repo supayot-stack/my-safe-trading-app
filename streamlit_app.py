@@ -5,24 +5,180 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- 1. PRO UI CONFIG (ULTRA DARK) ---
+# --- 1. PRO UI CONFIG ---
 st.set_page_config(page_title="Institutional Quant Terminal", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #000000; color: #ffffff; }
+    .stApp { background-color: #0b0e14; color: #e1e4e8; }
     .stat-card { 
-        background-color: #0a0a0a; padding: 20px; border-radius: 8px; 
-        border: 1px solid #1e1e1e; border-top: 4px solid #007bff;
-        margin-bottom: 20px;
-    }
-    .portfolio-card {
-        background-color: #050505; padding: 15px; border-radius: 8px;
-        border: 1px solid #1e1e1e; margin-bottom: 10px;
-        border-left: 5px solid #00ff66;
+        background-color: #161b22; padding: 20px; border-radius: 8px; 
+        border: 1px solid #30363d; border-top: 4px solid #58a6ff;
     }
     .guide-card {
-        background-color: #0a0a0a; padding: 25px; border-radius: 10px;
-        border: 1px solid #333; border-left: 5px solid #ffcc00;
-        margin-top: 15px;
+        background-color: #0d1117; padding: 25px; border-radius: 10px;
+        border: 1px solid #30363d; border-left: 5px solid #ffcc00;
+        margin-top: 20px;
     }
-    .profit { color: #00ff66;
+    .signal-acc { color: #3fb950; font-weight: bold; }
+    .signal-bear { color: #f85149; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. QUANT ENGINE ---
+@st.cache_data(ttl=3600)
+def get_institutional_data(ticker):
+    try:
+        if ticker.isalpha() and len(ticker) <= 5 and ticker.isupper():
+            thai_list = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "SCB", "BDMS", "GULF"]
+            if ticker in thai_list: ticker += ".BK"
+
+        df = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, progress=False)
+        if df.empty or len(df) < 200: return None
+        
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df['SMA200'] = df['Close'].rolling(200).mean()
+        df['SMA50'] = df['Close'].rolling(50).mean()
+        
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
+        df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+
+        tr = pd.concat([
+            df['High'] - df['Low'],
+            abs(df['High'] - df['Close'].shift()),
+            abs(df['Low'] - df['Close'].shift())
+        ], axis=1).max(axis=1)
+        df['ATR'] = tr.rolling(14).mean()
+        
+        df['SL'] = df['Close'] - (df['ATR'] * 2.5) 
+        df['TP'] = df['Close'] + (df['ATR'] * 5.0) 
+
+        df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
+        df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
+
+        return df.dropna()
+    except: return None
+
+# --- 3. SIDEBAR ---
+with st.sidebar:
+    st.title("🏦 Quant Control")
+    equity = st.number_input("Total Equity (THB):", value=1000000, step=10000)
+    max_risk = st.slider("Risk per Trade (%)", 0.1, 2.0, 1.0, 0.1)
+    
+    st.divider()
+    watchlist = st.multiselect("Watchlist:", ["NVDA", "AAPL", "BTC-USD", "SET50.BK", "GOLD"], default=["NVDA", "BTC-USD"])
+    custom = st.text_input("➕ Add Ticker:").upper().strip()
+    
+    final_watchlist = list(watchlist)
+    if custom and custom not in final_watchlist: final_watchlist.append(custom)
+
+# --- 4. DATA PROCESSING ---
+results = []
+data_dict = {}
+
+if final_watchlist:
+    with st.spinner('Scanning Assets...'):
+        for ticker in final_watchlist:
+            df = get_institutional_data(ticker)
+            if df is not None:
+                data_dict[ticker] = df
+                l = df.iloc[-1]
+                p, r, s200, s50, vr = l['Close'], l['RSI'], l['SMA200'], l['SMA50'], l['Vol_Ratio']
+                
+                if p > s200 and p > s50 and r < 45 and vr > 1.2:
+                    signal = "🟢 ACCUMULATE"
+                elif r > 75: signal = "💰 DISTRIBUTION"
+                elif p < s200: signal = "🔴 BEARISH REGIME"
+                else: signal = "⚪ NEUTRAL"
+
+                risk_cash = equity * (max_risk / 100)
+                sl_gap = p - l['SL']
+                qty = int(risk_cash / sl_gap) if sl_gap > 0 else 0
+                qty = min(qty, int(equity / p))
+
+                results.append({
+                    "Asset": ticker, "Price": round(p, 2), "Regime": signal,
+                    "RSI": round(r, 1), "Vol-Force": f"{vr:.2f}x",
+                    "Target Qty": f"{qty:,}", "Notional (THB)": f"{(qty*p):,.0f}",
+                    "Stop-Loss": round(l['SL'], 2)
+                })
+
+# --- 5. MAIN TERMINAL ---
+t1, t2, t3 = st.tabs(["🏛 Market Scanner", "📈 Technical Deep-Dive", "📖 Terminal Guide"])
+
+with t1:
+    st.subheader("🏛 Institutional Order Flow")
+    if results:
+        st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Equity", f"{equity:,.0f}")
+        c2.metric("Risk Budget", f"{(equity*max_risk/100):,.0f}")
+        c3.metric("Assets Active", len(results))
+
+with t2:
+    if data_dict:
+        sel = st.selectbox("Analyze Asset:", list(data_dict.keys()))
+        df_plot = data_dict[sel]
+        
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.2, 0.3])
+        
+        fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='yellow', width=1.5)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_pindex if 'df_pindex' in locals() else df_plot.index, y=df_plot['SL'], name='Institutional SL', line=dict(color='red', dash='dot')), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+
+        colors = ['green' if c >= o else 'red' for o, c in zip(df_plot['Open'], df_plot['Close'])]
+        fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], name='Volume', marker_color=colors), row=3, col=1)
+        
+        fig.update_layout(height=800, template="plotly_dark", xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- 6. USER GUIDE (NEW SECTION) ---
+with t3:
+    st.header("📖 คู่มือการใช้งานระบบ Institutional Quant Terminal")
+    
+    st.markdown("""
+    ### 1. การตั้งค่าหน้าตัก (Risk Management)
+    ก่อนเริ่มใช้งาน ให้กำหนดค่าที่ **Sidebar (แถบด้านข้าง)**:
+    * **Total Equity:** ระบุเงินทุนทั้งหมดของคุณ เพื่อให้ระบบคำนวณสัดส่วนการลงทุน
+    * **Risk per Trade:** กำหนดว่าหากพลาดพลั้ง คุณยอมขาดทุนได้กี่ % ของพอร์ต (แนะนำที่ 1-2%)
+    * **Watchlist:** เลือกหุ้นหรือสินทรัพย์ที่ต้องการสแกน
+    ---
+    """)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.info("""
+        **🔍 การอ่านค่าใน Market Scanner**
+        * **🟢 ACCUMULATE:** หุ้นขาขึ้นที่ย่อตัวลงมา (จุดซื้อที่ได้เปรียบ)
+        * **💰 DISTRIBUTION:** ราคาขึ้นมาแรงเกินไป ควรเริ่มแบ่งขายทำกำไร
+        * **🔴 BEARISH:** ขาลงชัดเจน ไม่ควรมีสถานะซื้อ
+        * **Vol-Force:** แรงซื้อวันนี้เทียบกับอดีต (มากกว่า 1.2x คือมีนัยสำคัญ)
+        """)
+    
+    with col_b:
+        st.success("""
+        **🎯 ไม้เด็ด: Target Qty**
+        ระบบจะคำนวณจำนวนหุ้นที่ควรซื้อให้โดยอัตโนมัติ โดยอิงจากระยะ **Stop Loss** เพื่อให้ยอดขาดทุนของคุณไม่เกินงบประมาณที่ตั้งไว้ใน Risk per Trade 
+        *(ช่วยแก้ปัญหาการซื้อเยอะเกินไปจนพอร์ตระเบิด)*
+        """)
+
+    st.markdown("""
+    ---
+    ### 2. กลยุทธ์การเทรด (Institutional Strategy)
+    
+    เพื่อให้ได้ประสิทธิภาพสูงสุดตามแบบฉบับกองทุน:
+    1. **จังหวะเข้า (Entry):** เมื่อสถานะเป็น **ACCUMULATE** และราคายังอยู่เหนือเส้น **SMA 200 (เส้นเหลือง)**
+    2. **จุดตัดขาดทุน (Stop Loss):** ใช้เส้นประสีแดงในกราฟเป็นเกณฑ์หลัก (คำนวณจากความผันผวน ATR)
+    3. **ความมีวินัย:** ออกคำสั่งซื้อตามจำนวนในช่อง **Target Qty** เท่านั้น
+    
+    *หมายเหตุ: ข้อมูลอ้างอิงจาก Timeframe รายวัน (Daily) เหมาะสำหรับการเทรดแบบ Swing Trade ระยะกลาง*
+    """)
+    
+    if st.button("🔄 Refresh Terminal System"): st.rerun()
