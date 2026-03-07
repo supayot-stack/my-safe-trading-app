@@ -18,6 +18,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 4px 4px 0px 0px; padding: 10px 20px; color: #8b949e; }
     .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; }
     div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 10px; }
+    .checklist-card { background-color: #1c2128; padding: 15px; border-radius: 8px; border: 1px dashed #444c56; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -213,7 +214,7 @@ with tabs[4]:
             st.plotly_chart(fig_corr, use_container_width=True)
         else: st.info("เพิ่ม Ticker มากกว่า 1 ตัวเพื่อดูความสัมพันธ์")
     with col_r:
-        st.write("") # Spacer เพื่อจัดกึ่งกลางแนวตั้ง
+        st.write("") 
         st.write("")
         st.write("")
         st.markdown("##### 🛡️ Portfolio Exposure")
@@ -231,47 +232,60 @@ with tabs[4]:
         else: st.warning("ยังไม่มีข้อมูลใน Portfolio")
 
 with tabs[5]:
-    st.header("📖 คู่มือ Step-by-Step")
-    st.info("💡 เน้นรักษาวินัยและการคุมความเสี่ยง (Risk Management)")
+    st.header("📖 คู่มือสำหรับมือใหม่ (Step-by-Step Guide)")
+    st.info("💡 ระบบนี้ช่วยคุมความเสี่ยงด้วยสถิติ ไม่ใช่การคาดเดา")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         st.markdown("""
-        ### 1️⃣ เริ่มต้น (Setup)
-        * **Capital:** เงินต้นทั้งหมดที่คุณมี (บาท)
-        * **Risk per Trade:** เปอร์เซ็นต์ที่ยอมเสียได้ต่อหนึ่งไม้ (แนะนำ 1%)
-        ### 2️⃣ การเข้าซื้อ (Entry)
-        เมื่อเห็น **🟢 ACCUMULATE**:
-        * **Trend:** ราคา > SMA 200 (ขาขึ้น)
+        ### 1️⃣ การตั้งค่า (Setup)
+        * **Capital:** เงินต้นทั้งหมดของคุณ (THB)
+        * **Risk per Trade:** จำนวนเงินที่ยอมเสียได้ต่อไม้ (แนะนำ 1%) ระบบจะคำนวณจำนวนหุ้นให้เอง
+        ### 2️⃣ การเข้าซื้อ (Entry Strategy)
+        เมื่อเห็นสัญญาณ **🟢 ACCUMULATE**:
+        * **Trend:** ราคาต้องอยู่เหนือเส้น SMA 200 (ขาขึ้น)
         * **RSI:** < 45 (ราคาย่อตัว ไม่ไล่ราคา)
         * **Volume:** Ratio > 1.2 (มีแรงซื้อหนาแน่น)
-        * **Action:** ซื้อตามจำนวน **Target Qty**
+        * **Action:** ซื้อตามจำนวนในช่อง **Target Qty** ทันที
         """)
     with col_g2:
         st.markdown("""
-        ### 3️⃣ การตัดขาดทุน (Stop-Loss)
-        * **วินัย:** หากราคาหลุดเส้นประสีแดงในกราฟ **ต้องขายทันที**
-        ### 4️⃣ การทำกำไร (Take Profit)
-        * **Distribution:** เมื่อ RSI > 80 ราคาตึงตัวมาก ควรแบ่งขาย
+        ### 3️⃣ การตั้งจุดตัดขาดทุน (Stop-Loss)
+        * **SL:** ระบบคำนวณจากความผันผวนจริง (ATR) คูณ 2.5
+        * **วินัย:** หากราคาปิดแท่งวันหลุดเส้นประสีแดงในกราฟ **ต้องขายทิ้งทันที**
+        ### 4️⃣ การขายทำกำไร (Take Profit)
+        * **Distribution:** เมื่อ RSI > 80 ราคาตึงตัวมาก แนะนำให้แบ่งขายเพื่อล็อกกำไร
         """)
+    
+    st.divider()
+    st.subheader("📝 Checklist ก่อนกดซื้อ (Before You Trade)")
+    st.markdown("""
+    <div class="checklist-card">
+    ✅ หุ้นอยู่ในสถานะ 🟢 ACCUMULATE ใช่หรือไม่?<br>
+    ✅ ฉันตั้งค่า Risk per Trade (1%) และ Capital ถูกต้องแล้วใช่หรือไม่?<br>
+    ✅ ฉันพร้อมที่จะขายตัดขาดทุน (Stop-Loss) ทันทีหากราคาหลุดเส้นแดงใช่หรือไม่?<br>
+    ✅ ฉันไม่ได้ลงเงินทั้งหมดในหุ้นตัวนี้เพียงตัวเดียวใช่หรือไม่?<br>
+    <b>หากตอบ 'ใช่' ทุกข้อ... คุณสามารถกดซื้อตาม Target Qty ได้เลย!</b>
+    </div>
+    """, unsafe_allow_html=True)
 
 with tabs[6]:
-    st.header("🧠 System Logic (สำหรับมือใหม่)")
+    st.header("🧠 โครงสร้างและตรรกะระบบ (System Logic)")
     arch_c1, arch_c2 = st.columns(2)
     with arch_c1:
         st.markdown(f"""
-        #### ⚙️ Data Engine
-        * **Bulk Fetching:** ดึงข้อมูลย้อนหลัง 3 ปีเพื่อให้เส้นค่าเฉลี่ยแม่นยำ
-        * **Live FX Sync:** ใช้ค่าเงินสดจากตลาด (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
-        * **Resilience:** ระบบเติมข้อมูลว่าง (NaN) อัตโนมัติ ป้องกันแอปค้าง
+        #### ⚙️ Data Handling
+        * **Bulk Engine:** ดึงข้อมูลย้อนหลัง 3 ปี เพื่อความแม่นยำของเส้นค่าเฉลี่ย
+        * **Live FX Sync:** เชื่อมต่อ API `USDTHB=X` (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
+        * **Resilience:** จัดการค่าว่าง (NaN) อัตโนมัติ ป้องกันแอปค้าง
         """)
-        st.markdown("#### 📐 สูตรคำนวณไม้เทรด")
+        st.markdown("#### 📐 สูตร Position Sizing")
         st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
     with arch_c2:
         st.markdown("""
-        #### 📈 Indicators
+        #### 📈 Indicators & Tech
         * **Wilder's RSI:** สูตรพิเศษที่เสถียรกว่า RSI ทั่วไป ลดสัญญาณหลอก
-        * **ATR Stop:** คำนวณระยะหนีจากความผันผวนจริง ไม่ใช่การเดา
-        * **Performance:** ระบบทดสอบย้อนหลัง 1 ปีเพื่อหา Win Rate
+        * **ATR Trailing Stop:** จุดหนีที่คำนวณตามความผันผวนจริง
+        * **Performance Analytics:** ระบบทดสอบย้อนหลัง 1 ปีเพื่อหา Win Rate
         """)
     st.divider()
     st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
