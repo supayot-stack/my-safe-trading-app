@@ -40,21 +40,19 @@ with tab1:
     if custom_ticker and custom_ticker not in final_list:
         final_list.append(custom_ticker)
 
-    # --- 4. DATA ENGINE ---
+    # --- 4. DATA ENGINE (FIXED BLOCK) ---
     def get_data(ticker, interval, data_period):
         try:
             df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
             if df.empty or len(df) < 200:
                 return None
+            
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             
+            # คำนวณอินดิเคเตอร์
             df['SMA200'] = df['Close'].rolling(200).mean()
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-            df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
-            df['SL'] = df['Close'] * 0.97
-            df['TP'] = df['Close'] * 1.07
-            return df
+            df['
