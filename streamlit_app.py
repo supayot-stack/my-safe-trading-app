@@ -9,7 +9,7 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Ultimate Quant Terminal v3.0", layout="wide")
+st.set_page_config(page_title="Ultimate Quant Terminal", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
@@ -22,9 +22,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & LIVE FX ---
-DB_FILE = "ultimate_quant_v3.json"
-BAK_FILE = "ultimate_quant_v3.json.bak"
-COMMISSION_RATE = 0.0015 # 0.15% Per Trade
+DB_FILE = "ultimate_quant_data.json"
+BAK_FILE = "ultimate_quant_data.json.bak"
+COMMISSION_RATE = 0.0015 # 0.15%
 
 @st.cache_data(ttl=3600) 
 def get_live_fx():
@@ -68,7 +68,8 @@ def fetch_all_data(tickers):
                 try: df = raw_data.xs(t, axis=1, level=1).copy()
                 except: continue
             else: df = raw_data.copy()
-            if df.empty or len(df) < 30: continue
+            
+            if df.empty or len(df) < 250: continue
             
             # Indicators
             df['SMA200'] = df['Close'].rolling(200).mean()
@@ -80,36 +81,31 @@ def fetch_all_data(tickers):
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14).mean()
             
-            # Trailing Stop Logic
+            # Trailing Stop
             df['Base_SL'] = df['Close'] - (df['ATR'] * 2.5)
-            sl_values = df['Base_SL'].values
-            close_values = df['Close'].values
+            sl_values, close_values = df['Base_SL'].values, df['Close'].values
             trailing_sl = np.zeros_like(sl_values)
             trailing_sl[0] = sl_values[0]
             for i in range(1, len(sl_values)):
-                if close_values[i-1] > trailing_sl[i-1]:
-                    trailing_sl[i] = max(trailing_sl[i-1], sl_values[i])
-                else:
-                    trailing_sl[i] = sl_values[i]
+                trailing_sl[i] = max(trailing_sl[i-1], sl_values[i]) if close_values[i-1] > trailing_sl[i-1] else sl_values[i]
             df['Trailing_SL'] = trailing_sl
             df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
             processed[t] = df.ffill().dropna()
         return processed
     except Exception as e:
-        st.error(f"Fetch Error: {e}")
-        return {}
+        st.error(f"Fetch Error: {e}"); return {}
 
 # --- 4. SIDEBAR ---
 if 'my_portfolio' not in st.session_state: st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.title("🛡️ Ultimate Quant v3.0")
+    st.title("🛡️ Ultimate Quant")
     st.info(f"💵 1 USD = **{LIVE_USDTHB:.2f} THB**")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Tickers (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
@@ -117,35 +113,32 @@ with st.sidebar:
 data_dict = fetch_all_data(final_watchlist)
 results = []
 for ticker in final_watchlist:
-    if ticker not in data_dict: continue
+    if ticker not in data_dict or len(data_dict[ticker]) < 2: continue
     df = data_dict[ticker]
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
-    is_above_sma = p > curr['SMA200']
-    is_above_mid = p > curr['SMA50']
     
-    if is_above_sma and is_above_mid and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
+    if p > curr['SMA200'] and p > curr['SMA50'] and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
-    elif not is_above_sma: sig = "🔴 BEARISH"
+    elif p < curr['SMA200']: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
-    is_usd = not ticker.endswith(".BK")
-    raw_qty = (risk_cash_thb / (LIVE_USDTHB if is_usd else 1)) / sl_gap
-    qty = int(raw_qty) if is_usd else int(raw_qty // 100) * 100
+    fx_m = LIVE_USDTHB if not ticker.endswith(".BK") else 1
+    qty = int((risk_cash_thb / fx_m) / sl_gap) if fx_m > 1 else int(((risk_cash_thb / fx_m) / sl_gap) // 100) * 100
 
     results.append({"Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), 
-                    "Target Qty": qty, "Trailing SL": round(curr['Trailing_SL'], 2), "Currency": "USD" if is_usd else "THB"})
+                    "Target Qty": qty, "Trailing SL": round(curr['Trailing_SL'], 2), "Currency": "USD" if fx_m > 1 else "THB"})
 res_df = pd.DataFrame(results)
 
 # --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics", "📖 Guide", "🧠 System Logic"])
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics (Tap 6)", "📖 Guide & Logic (Tap 7)"])
 
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("ระบุ Ticker ใน Sidebar เพื่อเริ่มวิเคราะห์")
+    else: st.warning("ระบุ Ticker ใน Sidebar")
 
 with tabs[1]:
     if data_dict:
@@ -165,112 +158,58 @@ with tabs[2]:
     with st.expander("➕ บันทึกไม้เทรด"):
         c1, c2, c3 = st.columns(3)
         p_asset = c1.selectbox("Asset", list(data_dict.keys()) if data_dict else ["None"])
-        p_entry = c2.number_input("Entry Price", value=0.0)
-        p_qty = c3.number_input("Quantity", value=0)
+        p_entry, p_qty = c2.number_input("Entry Price", 0.0), c3.number_input("Quantity", 0)
         if st.button("Add to Portfolio") and p_asset != "None":
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio); st.rerun()
-
     if st.session_state.my_portfolio:
-        p_list = []
-        for asset, info in st.session_state.my_portfolio.items():
-            if asset in data_dict:
-                cp = data_dict[asset]['Close'].iloc[-1]
-                sl = data_dict[asset]['Trailing_SL'].iloc[-1]
-                curr_l = "USD" if not asset.endswith(".BK") else "THB"
-                pnl = (cp - info['entry']) * info['qty']
-                p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": f"{pnl:,.2f} {curr_l}", "Status": "✅ HOLD" if cp > sl else "🚨 EXIT"})
+        p_list = [{"Asset": a, "Cost": i['entry'], "Price": data_dict[a]['Close'].iloc[-1], "Qty": i['qty'], "Status": "✅ HOLD" if data_dict[a]['Close'].iloc[-1] > data_dict[a]['Trailing_SL'].iloc[-1] else "🚨 EXIT"} for a, i in st.session_state.my_portfolio.items() if a in data_dict]
         st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        if st.button("🗑️ Reset"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.header("🧪 Strategy Backtest (Net of Commissions)")
+    st.header("🧪 Backtest (Net of Commissions)")
     sel_bt = st.selectbox("เลือกสินทรัพย์:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
-        df_bt = data_dict[sel_bt].iloc[-500:].copy() 
-        fx_mult = LIVE_USDTHB if not sel_bt.endswith(".BK") else 1
-        balance = capital; pos = 0; trades = []; entry_p = 0
-        
+        df_bt = data_dict[sel_bt].iloc[-500:].copy(); fx_mult = LIVE_USDTHB if not sel_bt.endswith(".BK") else 1
+        balance, pos, trades, entry_p = capital, 0, [], 0
         for i in range(1, len(df_bt)):
             c_bt, p_bt = df_bt.iloc[i], df_bt.iloc[i-1]
-            price = c_bt['Close']
-            if pos == 0 and price > c_bt['SMA200'] and p_bt['RSI'] < 45 and c_bt['Vol_Ratio'] > 1.2:
-                risk_amt = balance * (risk_pct / 100)
-                sl_d = max(price - c_bt['Trailing_SL'], 0.01)
-                pos = int((risk_amt / fx_mult) / sl_d)
-                entry_p = price
-                balance -= (entry_p * pos * COMMISSION_RATE * fx_mult) # Entry Fee
+            if pos == 0 and c_bt['Close'] > c_bt['SMA200'] and p_bt['RSI'] < 45 and c_bt['Vol_Ratio'] > 1.2:
+                pos = int(((balance * (risk_pct/100)) / fx_mult) / max(c_bt['Close'] - c_bt['Trailing_SL'], 0.01))
+                entry_p = c_bt['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_mult)
                 trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
-            elif pos > 0 and (price < c_bt['Trailing_SL'] or c_bt['RSI'] > 80):
-                exit_fee = (price * pos * COMMISSION_RATE * fx_mult)
-                pnl = ((price - entry_p) * pos * fx_mult) - exit_fee
-                balance += pnl
-                trades.append({"Type": "SELL", "Date": df_bt.index[i], "Price": price, "PnL": pnl})
+            elif pos > 0 and (c_bt['Close'] < c_bt['Trailing_SL'] or c_bt['RSI'] > 80):
+                pnl = ((c_bt['Close'] - entry_p) * pos * fx_mult) - (c_bt['Close'] * pos * COMMISSION_RATE * fx_mult)
+                balance += pnl; trades.append({"Type": "SELL", "Date": df_bt.index[i], "PnL": pnl, "Equity": balance})
                 pos = 0
-
         if trades:
             td_df = pd.DataFrame([t for t in trades if "PnL" in t])
             if not td_df.empty:
-                td_df['Equity'] = td_df['PnL'].cumsum() + capital
-                win_rate = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
-                st.metric("Final Balance (Net)", f"{balance:,.2f} THB")
-                st.metric("Win Rate", f"{win_rate:.1f}%")
-                fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#00ff00')))
-                st.plotly_chart(fig_bt, use_container_width=True)
+                st.metric("Final Balance", f"{balance:,.2f} THB"); st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#00ff00'))), use_container_width=True)
 
 with tabs[4]:
-    st.header("🛡️ Tap 6: Advanced Analytics & Monte Carlo")
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("🎲 Monte Carlo Simulation (1,000 Runs)")
-        if 'td_df' in locals() and not td_df.empty:
-            returns = td_df['PnL'].values
-            sims = []
-            for _ in range(1000):
-                sim_path = np.random.choice(returns, size=len(returns), replace=True).cumsum() + capital
-                sims.append(sim_path)
-            
+    st.header("🛡️ Tap 6: Advanced Analytics")
+    if 'td_df' in locals() and not td_df.empty:
+        col_m1, col_m2 = st.columns([2, 1])
+        with col_m1:
+            st.subheader("🎲 Monte Carlo (1,000 Runs)")
+            sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(1000)]
             fig_mc = go.Figure()
-            for s in sims[:50]: # Plot 50 paths
-                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.5), opacity=0.3, showlegend=False))
-            fig_mc.update_layout(title="Equity Path Probabilities", template="plotly_dark")
+            for s in sims[:100]: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.5), opacity=0.2, showlegend=False))
             st.plotly_chart(fig_mc, use_container_width=True)
-        else: st.info("Run Backtest first to see simulation")
-
-    with col2:
-        st.subheader("📊 Risk Metrics")
-        if 'td_df' in locals() and not td_df.empty:
-            profit_factor = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum())
-            st.metric("Profit Factor", f"{profit_factor:.2f}")
-            max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
-            st.metric("Max Drawdown", f"{max_dd:.2f}%", delta_color="inverse")
-            expectancy = td_df['PnL'].mean()
-            st.metric("Expectancy per Trade", f"{expectancy:,.2f} THB")
+        with col_m2:
+            pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum())
+            st.metric("Profit Factor", f"{pf:.2f}"); st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
+    else: st.info("Run Backtest first")
 
 with tabs[5]:
-    st.header("📖 Tap 7: Ultimate Quant Methodology")
+    st.header("📖 Tap 7: Logic & Manual")
+    st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - Trailing\,SL}")
     st.markdown("""
-    ### 🛡️ ปรัชญาการเทรด (The Quant Creed)
-    1. **วัดผลได้ (Measurable):** เราไม่ใช้ความรู้สึก ทุกจุดเข้าซื้อต้องมีตัวเลขรองรับ
-    2. **คุมความเสี่ยง (Risk First):** กำไรเป็นเรื่องของตลาด แต่ขาดทุนเป็นเรื่องของเรา (Position Sizing คือหัวใจ)
-    3. **ความสม่ำเสมอ (Consistency):** ระบบจะทำงานได้ดีที่สุดเมื่อเราทำตามวินัย 100%
-    
-    ### 🛠️ วิธีการใช้ Terminal นี้
-    * **Step 1:** ใส่ชื่อหุ้นที่สนใจใน Sidebar (รองรับทั้งหุ้นไทย .BK และหุ้นนอก)
-    * **Step 2:** ตรวจสอบ **Scanner** หาหุ้นที่ขึ้น `🟢 ACCUMULATE`
-    * **Step 3:** ใช้ **Target Qty** ในการส่งคำสั่งซื้อ (ระบบคำนวณ 1% Risk ให้แล้ว)
-    * **Step 4:** ติดตามหน้า **Portfolio** หากขึ้นไฟแดง `🚨 EXIT` ให้ขายทันทีโดยไม่มีข้อแม้
+    * **Logic:** เน้นเข้าซื้อเมื่อราคาย่อตัวในขาขึ้น (Pullback) และขายเมื่อกำไรเริ่มตึงตัวหรือเทรนด์เปลี่ยน
+    * **Commission:** หัก 0.15% ทุกไม้เพื่อให้ Backtest ใกล้เคียงความจริง
+    * **Trailing Stop:** กำแพงราคาขยับขึ้นตามจุดสูงสุดเท่านั้น (Ratchet)
     """)
 
-with tabs[6]:
-    st.header("🧠 System Logic & Mathematics")
-    st.latex(r"Position\,Size = \frac{Equity \times Risk\%}{Price - Trailing\,SL}")
-    st.markdown("""
-    * **Trailing Stop (ATR 2.5):** ใช้ค่าความผันผวนจริงเป็นตัวตั้งกำแพง ไม่แคบจนโดนสะบัดหลุด และไม่กว้างจนคืนกำไรหมด
-    * **Wilder's Smoothing:** RSI ในระบบนี้ใช้การเกลาค่าแบบ Wilder เพื่อลดสัญญาณหลอกในช่วงตลาดผันผวน
-    * **Monte Carlo Engine:** ใช้วิธี *Bootstrap Resampling* เพื่อสุ่มลำดับผลลัพธ์การเทรด ช่วยให้เห็นโอกาสรอดในระยะยาว
-    """)
-
-st.divider()
-st.caption("Ultimate Quant Terminal v3.0 | Built for Professional Statistical Trading | 2026 Edition")
+st.divider(); st.caption("Ultimate Quant Terminal | Professional Statistical Trading")
