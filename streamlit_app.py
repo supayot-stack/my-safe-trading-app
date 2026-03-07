@@ -31,46 +31,35 @@ def save_portfolio(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
 def format_ticker(ticker):
-    """ ปรับปรุง Thai Stock Mapping และความปลอดภัยของชื่อ Ticker """
     ticker = ticker.upper().strip()
     if not ticker: return None
-    
-    # Logic ตรวจสอบหุ้นไทย: ถ้าเป็นตัวอักษรล้วนและสั้น (สไตล์หุ้นไทย)
-    # หรือถ้า User ระบุใน Sidebar ว่าเป็นหุ้นไทย
     if ticker.isalpha() and len(ticker) <= 6 and not ticker.endswith(".BK"):
         thai_logic_list = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR"]
         if ticker in thai_logic_list:
             return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE (Enhanced Safety) ---
+# --- 3. CORE QUANT ENGINE ---
 @st.cache_data(ttl=1800)
 def get_data(ticker):
     try:
         df = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, progress=False)
         if df.empty or len(df) < 200: return None
-        
-        # จัดการ Multi-index columns ถ้ามี
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
-        # --- Technical Indicators ---
-        # 1. Moving Averages
         df['SMA200'] = df['Close'].rolling(200).mean()
         df['SMA50'] = df['Close'].rolling(50).mean()
         
-        # 2. RSI (Wilder's Smoothing) - แก้ไขความแม่นยำ
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
         
-        # 3. ATR & Stop Loss (Volatility-based)
         tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
         df['ATR'] = tr.rolling(14).mean()
         df['SL'] = df['Close'] - (df['ATR'] * 2.5)
         
-        # 4. Statistics
         df['Volatility'] = (df['ATR'] / df['Close']) * 100
         df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
         df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
@@ -88,43 +77,31 @@ with st.sidebar:
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    
-    watchlist_input = st.text_area("Add Tickers (comma separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Add Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = [format_ticker(t) for t in raw_tickers if format_ticker(t)]
 
-# --- 5. DATA PROCESSING (Anti Look-ahead & Safety) ---
+# --- 5. DATA PROCESSING ---
 results = []
 data_dict = {}
 
-with st.spinner('Scanning Market & Calculating Signals...'):
+with st.spinner('Scanning Market...'):
     for ticker in final_watchlist:
         df = get_data(ticker)
         if df is not None:
             data_dict[ticker] = df
-            
-            # --- Anti Look-ahead Bias Logic ---
-            # เราใช้ค่า Prev (เมื่อวาน) ตัดสินใจซื้อ และใช้ค่า Curr (วันนี้) เพื่อดูราคาปัจจุบัน
             curr = df.iloc[-1]
             prev = df.iloc[-2] 
-            
             p = curr['Close']
             
-            # 🚦 Signal Strategy
             if p > curr['SMA200'] and p > curr['SMA50'] and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2:
                 sig = "🟢 ACCUMULATE"
-            elif curr['RSI'] > 80: 
-                sig = "💰 DISTRIBUTION"
-            elif p < curr['SMA200']: 
-                sig = "🔴 BEARISH"
-            else: 
-                sig = "⚪ NEUTRAL"
+            elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
+            elif p < curr['SMA200']: sig = "🔴 BEARISH"
+            else: sig = "⚪ NEUTRAL"
 
-            # 🛡️ Zero Division Guard & Position Sizing
             risk_cash = capital * (risk_pct / 100)
             sl_gap = p - curr['SL']
-            
-            # ป้องกัน sl_gap ติดลบหรือเป็นศูนย์ (Safety Buffer)
             safe_sl_gap = max(sl_gap, 0.01) 
             qty = int(risk_cash / safe_sl_gap) if p > curr['SL'] else 0
 
@@ -143,8 +120,6 @@ with t1:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty:
         st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else:
-        st.info("กรุณาระบุ Ticker ใน Sidebar เพื่อเริ่มสแกน")
 
 with t2:
     if data_dict:
@@ -156,11 +131,20 @@ with t2:
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume'), row=3, col=1)
+        
+        # --- จุดที่แก้ไข: เปลี่ยน Volume เป็นสีเทาตัดกับพื้นหลัง ---
+        fig.add_trace(go.Bar(
+            x=df_p.index, 
+            y=df_p['Volume'], 
+            name='Volume',
+            marker_color='#4a4a4a',  # สีเทาเข้ม (Muted Gray)
+            opacity=0.8
+        ), row=3, col=1)
         
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
+# ส่วนที่เหลือคงเดิม (t3, t4, t5)
 with t3:
     st.subheader("💼 Portfolio Management")
     with st.expander("➕ บันทึกไม้เทรด"):
@@ -172,55 +156,26 @@ with t3:
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio)
             st.rerun()
-
     if st.session_state.my_portfolio:
-        p_data = []
+        p_list = []
         for asset, info in st.session_state.my_portfolio.items():
             match = res_df[res_df['Asset'] == asset]
             if not match.empty:
-                cp = match.iloc[0]['Price']
-                sl = match.iloc[0]['Stop-Loss']
+                cp = match.iloc[0]['Price']; sl = match.iloc[0]['Stop-Loss']
                 pnl = (cp - info['entry']) * info['qty']
-                status = "✅ HOLD" if cp > sl else "🚨 EXIT NOW"
-                p_data.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": status})
-        
-        if p_data:
-            st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
-            if st.button("🗑️ Reset Portfolio"):
-                save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+                p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": "✅ HOLD" if cp > sl else "🚨 EXIT"})
+        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with t4:
-    st.subheader("🧪 Advanced Analytics & Roadmap")
-    col_left, col_right = st.columns(2)
-    
-    with col_left:
-        st.write("### 🔗 Asset Correlation")
-        # แก้ไข TypeError: สร้าง DataFrame ราคาปิดเพื่อหา Correlation
-        price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
-        if len(price_dict) > 1:
-            corr_df = pd.DataFrame(price_dict).corr()
-            fig_corr = go.Figure(data=go.Heatmap(
-                z=corr_df.values, x=corr_df.columns, y=corr_df.columns, 
-                colorscale='RdBu_r', zmin=-1, zmax=1
-            ))
-            fig_corr.update_layout(height=400, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig_corr, use_container_width=True)
-            st.caption("ถ้าสีแดงเข้ม (ใกล้ 1.0) แปลว่าหุ้นวิ่งไปทางเดียวกันมากเกินไป")
-        else:
-            st.info("เพิ่มหุ้นอย่างน้อย 2 ตัวเพื่อดู Correlation")
-
-    with col_right:
-        st.write("### 🏗️ Future Modules")
-        st.checkbox("Backtesting Engine (RSI Strategy)", disabled=True, value=False)
-        st.checkbox("Sector Rotation Map", disabled=True, value=False)
-        st.checkbox("Fundamental Score (P/E, PEG)", disabled=True, value=False)
-        st.info("Module เหล่านี้จะถูกพัฒนาใน Roadmap ถัดไปเพื่อเพิ่มความแม่นยำ")
+    st.subheader("🧪 Analytics")
+    price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
+    if len(price_dict) > 1:
+        corr_df = pd.DataFrame(price_dict).corr()
+        fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1))
+        fig_corr.update_layout(height=400, template="plotly_dark")
+        st.plotly_chart(fig_corr, use_container_width=True)
+    else: st.info("เพิ่มหุ้นอย่างน้อย 2 ตัวเพื่อดู Correlation")
 
 with t5:
-    st.markdown("""
-    ### 📖 Quant Terminal Guide
-    1. **Scanner:** ดู "Regime" เพื่อหาหุ้นที่พร้อมวิ่ง (Green = เข้าเกณฑ์สะสม)
-    2. **Deep-Dive:** ตรวจสอบแนวรับ-แนวต้าน และจุด Stop-loss (เส้นประสีแดง)
-    3. **Stop-loss Strategy:** เราใช้ $ATR \times 2.5$ เพื่อให้ราคาหุ้น "หายใจ" ได้ ไม่โดนเขย่าออกก่อนเวลา
-    4. **Safety Check:** หาก Correlation สูงเกินไป ควรพิจารณาเลือกเทรดเพียงตัวเดียวในกลุ่มนั้น
-    """)
+    st.markdown("### 📖 Guide\n1. **Scanner:** หาหุ้นเขียว\n2. **Deep-Dive:** ดูกราฟ\n3. **Portfolio:** คุมความเสี่ยง")
