@@ -8,23 +8,24 @@ import json
 import os
 import shutil
 
-# --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Gemini Master Quant v2.6 Ultimate", layout="wide")
+# --- 1. INSTITUTIONAL UI CONFIG ---
+st.set_page_config(page_title="CORE-STRAT TERMINAL", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; border-left: 5px solid #00ff00; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 4px 4px 0px 0px; padding: 10px 20px; color: #8b949e; }
-    .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; }
-    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 10px; }
-    .checklist-card { background-color: #1c2128; padding: 15px; border-radius: 8px; border: 1px dashed #444c56; }
+    .stApp { background-color: #0d1117; color: #c9d1d9; }
+    .stMetric { background-color: #161b22; padding: 20px; border-radius: 12px; border: 1px solid #30363d; border-left: 6px solid #238636; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 6px 6px 0px 0px; padding: 12px 24px; color: #8b949e; border: 1px solid #30363d; }
+    .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; border-bottom: 2px solid #58a6ff; }
+    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 12px; background-color: #161b22; }
+    .checklist-card { background-color: #0d1117; padding: 20px; border-radius: 10px; border: 1px dashed #30363d; line-height: 1.8; }
+    h1, h2, h3 { color: #58a6ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATA PERSISTENCE & LIVE FX ---
-DB_FILE = "portfolio_data_v2.json"
-BAK_FILE = "portfolio_data_v2.json.bak"
+# --- 2. CORE ENGINE: DATA PERSISTENCE & LIVE FX ---
+DB_FILE = "core_strat_portfolio.json"
+BAK_FILE = "core_strat_portfolio.json.bak"
 
 @st.cache_data(ttl=3600) 
 def get_live_fx():
@@ -48,18 +49,19 @@ def save_portfolio(data):
     try:
         with open(DB_FILE, "w") as f: json.dump(data, f)
         shutil.copy(DB_FILE, BAK_FILE) 
-    except Exception as e: st.error(f"Error saving: {e}")
+    except Exception as e: st.error(f"System Error: {e}")
 
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
+    # Auto-suffix for common Thai stocks
     thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_stocks and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE ---
+# --- 3. QUANTITATIVE ANALYSIS ENGINE ---
 @st.cache_data(ttl=1800)
-def fetch_all_data(tickers):
+def fetch_market_data(tickers):
     if not tickers: return {}
     try:
         raw_data = yf.download(tickers, period="3y", interval="1d", auto_adjust=True, progress=False)
@@ -71,6 +73,7 @@ def fetch_all_data(tickers):
             else: df = raw_data.copy()
             if df.empty or len(df) < 30: continue
             
+            # Indicators with Resilience
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -85,39 +88,44 @@ def fetch_all_data(tickers):
             processed[t] = df.ffill().bfill()
         return processed
     except Exception as e:
-        st.error(f"Fetch Error: {e}")
+        st.error(f"Data Connection Error: {e}")
         return {}
 
-# --- 4. SIDEBAR ---
+# --- 4. TERMINAL SIDEBAR ---
 if 'my_portfolio' not in st.session_state: st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.title("🛡️ Secure Quant v2.6")
-    st.info(f"💵 1 USD = **{LIVE_USDTHB:.2f} THB**")
-    capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
+    st.markdown("<h1 style='color: #58a6ff; margin-bottom: 0;'>🏛️ CORE-STRAT</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #8b949e; margin-top: -10px; font-size: 14px;'>QUANT TERMINAL</p>", unsafe_allow_html=True)
+    st.info(f"💵 **FX RATE:** 1 USD = {LIVE_USDTHB:.2f} THB")
+    st.divider()
+    capital = st.number_input("Total Managed Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Tickers (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Asset Watchlist (Comma Separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
+    st.divider()
+    st.caption("CORE-STRAT ANALYTICS | v2.6.4 Stable")
 
-# --- 5. DATA PROCESSING ---
-data_dict = fetch_all_data(final_watchlist)
+# --- 5. DATA ENGINE EXECUTION ---
+data_dict = fetch_market_data(final_watchlist)
 results = []
 for ticker in final_watchlist:
     if ticker not in data_dict or data_dict[ticker].empty: continue
     df = data_dict[ticker]
-    if len(df) < 2: continue
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
+    
+    # Logic Signal
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
-    
     if is_above_sma and is_above_mid and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
     elif not is_above_sma: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
+    # Position Sizing Logic
     risk_cash_thb = capital * (risk_pct / 100)
     sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
@@ -126,35 +134,37 @@ for ticker in final_watchlist:
                     "Target Qty": qty, "Stop-Loss": round(curr['SL'], 2), "Currency": "USD" if is_usd else "THB"})
 res_df = pd.DataFrame(results)
 
-# --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🧪 Analytics", "📖 Step-by-Step Guide", "🧠 System Logic"])
+# --- 6. COMMAND CENTER (TABS) ---
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🧪 Analytics", "📖 Guide", "🧠 Logic"])
 
 with tabs[0]:
-    st.subheader("📊 Market Opportunities")
+    st.subheader("📊 Market Opportunity Scanner")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("ระบุ Ticker ใน Sidebar เพื่อเริ่มวิเคราะห์")
+    else: st.warning("Please input tickers in the sidebar to start analysis.")
 
 with tabs[1]:
     if data_dict:
-        sel = st.selectbox("Analyze Asset:", list(data_dict.keys()))
+        sel = st.selectbox("Select Asset for Deep-Dive:", list(data_dict.keys()))
         df_p = data_dict[sel]
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#c0c0c0', opacity=0.6), row=3, col=1)
-        fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='#f1c40f', width=1.5)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='#e74c3c', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='#3498db')), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="#e74c3c", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="#2ecc71", row=2, col=1)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#95a5a6', opacity=0.5), row=3, col=1)
+        fig.update_layout(height=750, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
 with tabs[2]:
-    st.subheader("💼 Portfolio Management")
-    with st.expander("➕ บันทึกไม้เทรด"):
+    st.subheader("💼 Active Portfolio Management")
+    with st.expander("➕ Register New Trade"):
         c1, c2, c3 = st.columns(3)
-        p_asset = c1.selectbox("Asset", list(data_dict.keys()) if data_dict else ["None"])
-        p_entry = c2.number_input("Entry Price", value=0.0)
-        p_qty = c3.number_input("Quantity", value=0)
-        if st.button("Add to Portfolio") and p_asset != "None":
+        p_asset = c1.selectbox("Asset Ticker", list(data_dict.keys()) if data_dict else ["None"])
+        p_entry = c2.number_input("Average Entry Price", value=0.0)
+        p_qty = c3.number_input("Allocated Quantity", value=0)
+        if st.button("Commit Trade") and p_asset != "None":
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio); st.rerun()
 
@@ -168,11 +178,11 @@ with tabs[2]:
                 pnl = (cp - info['entry']) * info['qty']
                 p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": f"{pnl:,.2f} {curr_l}", "Status": "✅ HOLD" if cp > sl else "🚨 EXIT"})
         st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        if st.button("🗑️ Purge Portfolio Data"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.header("🧪 Strategy Backtest (1-Year)")
-    sel_bt = st.selectbox("เลือกสินทรัพย์เพื่อทดสอบ:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
+    st.header("🧪 Strategy Performance Simulation (1-Year)")
+    sel_bt = st.selectbox("Asset for Backtest:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
         df_bt = data_dict[sel_bt].iloc[-252:].copy() 
         balance = capital; pos = 0; trades = []; entry_p = 0
@@ -194,98 +204,95 @@ with tabs[3]:
                 wr = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Win Rate", f"{wr:.1f}%")
-                c2.metric("Total P/L (THB)", f"{td_df['PnL'].sum():,.2f}")
-                c3.metric("Final Balance", f"{balance:,.2f}")
+                c2.metric("Accumulated P/L", f"{td_df['PnL'].sum():,.2f} THB")
+                c3.metric("Projected Balance", f"{balance:,.2f} THB")
                 td_df['Equity'] = td_df['PnL'].cumsum() + capital
-                fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#00ff00')))
-                fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt}", template="plotly_dark")
+                fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#2ecc71')))
+                fig_bt.update_layout(title="Equity Growth Curve", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
 
 with tabs[4]:
-    st.subheader("🧪 Analytics & Portfolio Risk")
+    st.subheader("🧪 Portfolio Analytics & Risk Exposure")
     col_l, col_spacer, col_r = st.columns([2, 0.2, 1])
     with col_l:
-        st.markdown("##### 📉 Asset Correlation")
+        st.markdown("##### 📉 Asset Correlation Matrix")
         price_dict = {t: df['Close'] for t, df in data_dict.items()}
         if len(price_dict) > 1:
             corr_df = pd.DataFrame(price_dict).dropna().corr()
             fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
-            fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
+            fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig_corr, use_container_width=True)
-        else: st.info("เพิ่ม Ticker มากกว่า 1 ตัวเพื่อดูความสัมพันธ์")
+        else: st.info("Add multiple tickers to visualize correlation.")
     with col_r:
-        st.write("") 
-        st.write("")
-        st.write("")
-        st.markdown("##### 🛡️ Portfolio Exposure")
+        st.write(""); st.write(""); st.write("")
+        st.markdown("##### 🛡️ Exposure Metrics")
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
             risk_util = (t_risk / capital) * 100 if capital > 0 else 0
-            st.metric("Total Risk", f"{t_risk:,.2f} THB")
+            st.metric("Total Net Risk", f"{t_risk:,.2f} THB")
             st.write(f"Risk Utilization: **{risk_util:.2f}%**")
             st.progress(min(risk_util / 100, 1.0))
-            st.caption("แนะนำ: ความเสี่ยงรวมไม่ควรเกิน 5-10% ของเงินต้น")
+            st.caption("Benchmark: Portfolio risk should not exceed 10% of total equity.")
             st.divider()
-            st.write("🔧 **System Health**")
-            st.write("• Data Link: ✅ Active")
-            st.write(f"• FX Sync: ✅ {LIVE_USDTHB:.2f}")
-        else: st.warning("ยังไม่มีข้อมูลใน Portfolio")
+            st.write("🔧 **Terminal Status**")
+            st.write("• Data Link: ✅ Verified")
+            st.write(f"• USD/THB Sync: ✅ Active ({LIVE_USDTHB})")
+        else: st.warning("No active portfolio data detected.")
 
 with tabs[5]:
-    st.header("📖 คู่มือสำหรับมือใหม่ (Step-by-Step Guide)")
-    st.info("💡 ระบบนี้ช่วยคุมความเสี่ยงด้วยสถิติ ไม่ใช่การคาดเดา")
+    st.header("📖 Operator Manual (Step-by-Step Guide)")
+    st.info("💡 CORE-STRAT is built on statistical discipline, not market prediction.")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         st.markdown("""
-        ### 1️⃣ การตั้งค่า (Setup)
-        * **Capital:** เงินต้นทั้งหมดของคุณ (THB)
-        * **Risk per Trade:** จำนวนเงินที่ยอมเสียได้ต่อไม้ (แนะนำ 1%) ระบบจะคำนวณจำนวนหุ้นให้เอง
-        ### 2️⃣ การเข้าซื้อ (Entry Strategy)
-        เมื่อเห็นสัญญาณ **🟢 ACCUMULATE**:
-        * **Trend:** ราคาต้องอยู่เหนือเส้น SMA 200 (ขาขึ้น)
-        * **RSI:** < 45 (ราคาย่อตัว ไม่ไล่ราคา)
-        * **Volume:** Ratio > 1.2 (มีแรงซื้อหนาแน่น)
-        * **Action:** ซื้อตามจำนวนในช่อง **Target Qty** ทันที
+        ### 1️⃣ Initial Configuration
+        * **Capital:** Input your total investment power (THB).
+        * **Risk per Trade:** The % of capital you are willing to lose if a trade hits Stop-Loss (Standard: 1%).
+        ### 2️⃣ Opportunity Scanning
+        Look for **🟢 ACCUMULATE** signals:
+        * **Trend:** Price > SMA 200 (Primary Trend is Bullish).
+        * **Momentum:** RSI < 45 (Price is currently pulling back/discounted).
+        * **Volume:** Ratio > 1.2 (Institutional buying pressure confirmed).
+        * **Action:** Execute trade based on **Target Qty**.
         """)
     with col_g2:
         st.markdown("""
-        ### 3️⃣ การตั้งจุดตัดขาดทุน (Stop-Loss)
-        * **SL:** ระบบคำนวณจากความผันผวนจริง (ATR) คูณ 2.5
-        * **วินัย:** หากราคาปิดแท่งวันหลุดเส้นประสีแดงในกราฟ **ต้องขายทิ้งทันที**
-        ### 4️⃣ การขายทำกำไร (Take Profit)
-        * **Distribution:** เมื่อ RSI > 80 ราคาตึงตัวมาก แนะนำให้แบ่งขายเพื่อล็อกกำไร
+        ### 3️⃣ Risk Execution (Stop-Loss)
+        * **Discipline:** If the daily close price falls below the **RED DOTTED LINE**, exit immediately.
+        * **ATR Logic:** Stop-Loss adjusts dynamically to market volatility.
+        ### 4️⃣ Profit Realization
+        * **Distribution:** When RSI > 80, the asset is overextended. Consider trimming 50% of the position.
         """)
-    
     st.divider()
-    st.subheader("📝 Checklist ก่อนกดซื้อ (Before You Trade)")
+    st.subheader("📝 Pre-Trade Checklist")
     st.markdown("""
     <div class="checklist-card">
-    ✅ หุ้นอยู่ในสถานะ 🟢 ACCUMULATE ใช่หรือไม่?<br>
-    ✅ ฉันตั้งค่า Risk per Trade (1%) และ Capital ถูกต้องแล้วใช่หรือไม่?<br>
-    ✅ ฉันพร้อมที่จะขายตัดขาดทุน (Stop-Loss) ทันทีหากราคาหลุดเส้นแดงใช่หรือไม่?<br>
-    ✅ ฉันไม่ได้ลงเงินทั้งหมดในหุ้นตัวนี้เพียงตัวเดียวใช่หรือไม่?<br>
-    <b>หากตอบ 'ใช่' ทุกข้อ... คุณสามารถกดซื้อตาม Target Qty ได้เลย!</b>
+    ✅ Signal: 🟢 ACCUMULATE confirmed?<br>
+    ✅ Position Sizing: Target Qty matches current risk parameters?<br>
+    ✅ Commitment: Am I prepared to sell immediately at Stop-Loss?<br>
+    ✅ Diversification: Does this trade keep my Total Risk under 10%?<br>
+    <b>If all boxes checked... Execute Order.</b>
     </div>
     """, unsafe_allow_html=True)
 
 with tabs[6]:
-    st.header("🧠 โครงสร้างและตรรกะระบบ (System Logic)")
+    st.header("🧠 System Architecture & Quant Logic")
     arch_c1, arch_c2 = st.columns(2)
     with arch_c1:
         st.markdown(f"""
-        #### ⚙️ Data Handling
-        * **Bulk Engine:** ดึงข้อมูลย้อนหลัง 3 ปี เพื่อความแม่นยำของเส้นค่าเฉลี่ย
-        * **Live FX Sync:** เชื่อมต่อ API `USDTHB=X` (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
-        * **Resilience:** จัดการค่าว่าง (NaN) อัตโนมัติ ป้องกันแอปค้าง
+        #### ⚙️ Data Layer
+        * **Bulk Retrieval:** 3-year historical lookup for SMA stability.
+        * **Currency Engine:** Dynamic FX conversion for global asset risk.
+        * **Resilience Logic:** Auto-fill for missing data points and IPO support.
         """)
-        st.markdown("#### 📐 สูตร Position Sizing")
-        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
+        st.markdown("#### 📐 Mathematical Position Sizing")
+        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - StopLoss}")
     with arch_c2:
         st.markdown("""
-        #### 📈 Indicators & Tech
-        * **Wilder's RSI:** สูตรพิเศษที่เสถียรกว่า RSI ทั่วไป ลดสัญญาณหลอก
-        * **ATR Trailing Stop:** จุดหนีที่คำนวณตามความผันผวนจริง
-        * **Performance Analytics:** ระบบทดสอบย้อนหลัง 1 ปีเพื่อหา Win Rate
+        #### 📈 Indicator Matrix
+        * **Wilder's RSI:** Smoothed exponential RSI for noise reduction.
+        * **ATR Trailing Stop:** Multiplier of 2.5x ATR for volatility-adjusted exits.
+        * **Performance Engine:** 252-day sliding window backtest.
         """)
     st.divider()
-    st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
+    st.caption("CORE-STRAT TERMINAL | Institutional-Grade Statistical Trading")
