@@ -24,7 +24,7 @@ st.markdown("""
 # --- 2. DATA PERSISTENCE & LIVE FX ---
 DB_FILE = "ultimate_quant_data.json"
 BAK_FILE = "ultimate_quant_data.json.bak"
-COMMISSION_RATE = 0.0015 # 0.15%
+COMMISSION_RATE = 0.0015  # ค่าธรรมเนียม 0.15%
 
 @st.cache_data(ttl=3600) 
 def get_live_fx():
@@ -61,6 +61,7 @@ def format_ticker(ticker):
 def fetch_all_data(tickers):
     if not tickers: return {}
     try:
+        # ดึงข้อมูล 3 ปีเพื่อให้ SMA200 เสถียร
         raw_data = yf.download(tickers, period="3y", interval="1d", auto_adjust=True, progress=False)
         processed = {}
         for t in tickers:
@@ -69,9 +70,10 @@ def fetch_all_data(tickers):
                 except: continue
             else: df = raw_data.copy()
             
+            # ป้องกัน IndexError โดยตรวจสอบข้อมูลขั้นต่ำ (ต้องมี SMA200)
             if df.empty or len(df) < 250: continue
             
-            # Indicators
+            # คำนวณ Indicators
             df['SMA200'] = df['Close'].rolling(200).mean()
             df['SMA50'] = df['Close'].rolling(50).mean()
             delta = df['Close'].diff()
@@ -81,13 +83,13 @@ def fetch_all_data(tickers):
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14).mean()
             
-            # Trailing Stop
+            # Trailing Stop Logic (Ratchet)
             df['Base_SL'] = df['Close'] - (df['ATR'] * 2.5)
-            sl_values, close_values = df['Base_SL'].values, df['Close'].values
-            trailing_sl = np.zeros_like(sl_values)
-            trailing_sl[0] = sl_values[0]
-            for i in range(1, len(sl_values)):
-                trailing_sl[i] = max(trailing_sl[i-1], sl_values[i]) if close_values[i-1] > trailing_sl[i-1] else sl_values[i]
+            sl_v, cl_v = df['Base_SL'].values, df['Close'].values
+            trailing_sl = np.zeros_like(sl_v)
+            trailing_sl[0] = sl_v[0]
+            for i in range(1, len(sl_v)):
+                trailing_sl[i] = max(trailing_sl[i-1], sl_v[i]) if cl_v[i-1] > trailing_sl[i-1] else sl_v[i]
             df['Trailing_SL'] = trailing_sl
             df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
@@ -109,7 +111,7 @@ with st.sidebar:
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
-# --- 5. DATA PROCESSING ---
+# --- 5. DATA PROCESSING & SIGNAL SCANNER ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 for ticker in final_watchlist:
@@ -118,6 +120,7 @@ for ticker in final_watchlist:
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
     
+    # Decision Engine Logic
     if p > curr['SMA200'] and p > curr['SMA50'] and prev['RSI'] < 45 and curr['Vol_Ratio'] > 1.2: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 80: sig = "💰 DISTRIBUTION"
     elif p < curr['SMA200']: sig = "🔴 BEARISH"
@@ -138,7 +141,7 @@ tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backte
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
-    else: st.warning("ระบุ Ticker ใน Sidebar")
+    else: st.warning("กรุณาระบุ Ticker ใน Sidebar")
 
 with tabs[1]:
     if data_dict:
@@ -177,39 +180,46 @@ with tabs[3]:
             c_bt, p_bt = df_bt.iloc[i], df_bt.iloc[i-1]
             if pos == 0 and c_bt['Close'] > c_bt['SMA200'] and p_bt['RSI'] < 45 and c_bt['Vol_Ratio'] > 1.2:
                 pos = int(((balance * (risk_pct/100)) / fx_mult) / max(c_bt['Close'] - c_bt['Trailing_SL'], 0.01))
-                entry_p = c_bt['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_mult)
+                entry_p = c_bt['Close']; balance -= (entry_p * pos * COMMISSION_RATE * fx_mult) # Buy Fee
                 trades.append({"Type": "BUY", "Date": df_bt.index[i], "Price": entry_p})
             elif pos > 0 and (c_bt['Close'] < c_bt['Trailing_SL'] or c_bt['RSI'] > 80):
-                pnl = ((c_bt['Close'] - entry_p) * pos * fx_mult) - (c_bt['Close'] * pos * COMMISSION_RATE * fx_mult)
+                pnl = ((c_bt['Close'] - entry_p) * pos * fx_mult) - (c_bt['Close'] * pos * COMMISSION_RATE * fx_mult) # Sell Fee
                 balance += pnl; trades.append({"Type": "SELL", "Date": df_bt.index[i], "PnL": pnl, "Equity": balance})
                 pos = 0
         if trades:
             td_df = pd.DataFrame([t for t in trades if "PnL" in t])
             if not td_df.empty:
-                st.metric("Final Balance", f"{balance:,.2f} THB"); st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#00ff00'))), use_container_width=True)
+                st.metric("Final Balance (Net)", f"{balance:,.2f} THB")
+                st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#00ff00'))), use_container_width=True)
 
 with tabs[4]:
     st.header("🛡️ Tap 6: Advanced Analytics")
     if 'td_df' in locals() and not td_df.empty:
         col_m1, col_m2 = st.columns([2, 1])
         with col_m1:
-            st.subheader("🎲 Monte Carlo (1,000 Runs)")
+            st.subheader("🎲 Monte Carlo Simulation (1,000 Runs)")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(1000)]
             fig_mc = go.Figure()
             for s in sims[:100]: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=0.5), opacity=0.2, showlegend=False))
+            fig_mc.update_layout(title="ความน่าจะเป็นของพอร์ตในอนาคต", template="plotly_dark")
             st.plotly_chart(fig_mc, use_container_width=True)
         with col_m2:
             pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum())
-            st.metric("Profit Factor", f"{pf:.2f}"); st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
-    else: st.info("Run Backtest first")
+            st.metric("Profit Factor", f"{pf:.2f}")
+            st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
+            st.metric("Expectancy", f"{td_df['PnL'].mean():,.2f} THB")
+    else: st.info("กรุณารัน Backtest เพื่อดูวิเคราะห์เชิงลึก")
 
 with tabs[5]:
-    st.header("📖 Tap 7: Logic & Manual")
+    st.header("📖 Tap 7: Ultimate Guide & Logic")
+    st.markdown("### 📐 สูตรคำนวณไม้เทรด (Position Sizing)")
     st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - Trailing\,SL}")
+    st.info("💡 กลยุทธ์นี้เน้น 'การเทรดด้วยสถิติ' ไม่ใช่ความรู้สึก")
     st.markdown("""
-    * **Logic:** เน้นเข้าซื้อเมื่อราคาย่อตัวในขาขึ้น (Pullback) และขายเมื่อกำไรเริ่มตึงตัวหรือเทรนด์เปลี่ยน
-    * **Commission:** หัก 0.15% ทุกไม้เพื่อให้ Backtest ใกล้เคียงความจริง
-    * **Trailing Stop:** กำแพงราคาขยับขึ้นตามจุดสูงสุดเท่านั้น (Ratchet)
+    * **🟢 Accumulate:** เข้าซื้อเมื่อราคาย่อตัวลงในแนวโน้มขาขึ้น (Buy the Dip)
+    * **🛡️ Trailing Stop:** กำแพงราคาขยับขึ้นตามจุดสูงสุดเพื่อ Lock กำไร และป้องกันเงินต้น
+    * **🎲 Monte Carlo:** ใช้การสุ่มลำดับผลกำไรในอดีตเพื่อทดสอบว่าระบบจะทนต่อสภาวะแพ้ติดกันได้หรือไม่
+    * **💸 Commissions:** รวมค่าธรรมเนียม 0.15% ทั้งขาซื้อและขาย เพื่อความสมจริงของกำไรสุทธิ
     """)
 
-st.divider(); st.caption("Ultimate Quant Terminal | Professional Statistical Trading")
+st.divider(); st.caption("Ultimate Quant Terminal | Built for Professional Systematic Trading")
