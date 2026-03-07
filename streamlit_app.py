@@ -5,52 +5,49 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # --- 1. ตั้งค่าหน้าจอ ---
-st.set_page_config(page_title="Safe Heaven Quant Pro Max", layout="wide")
+st.set_page_config(page_title="Safe Heaven Quant Pro Max V.2", layout="wide")
 
 st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    .risk-box { background-color: #2c3333; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-top: 10px; }
-    .info-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+.stApp { background-color: #0e1117; color: #ffffff; }
+.risk-box { background-color: #2c3333; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-top: 10px; }
+.info-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- 2. ส่วนเมนู (Tabs) ---
-tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ การทำงานของระบบ (Internal)"])
+tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง (Dynamic)", "⚙️ การทำงานของระบบ (Internal)"])
 
-# --- TAB 2: คู่มือบริหารความเสี่ยง ---
 with tab2:
-    st.header("📖 กฎเหล็ก 1% ของนักลงทุนระดับโลก")
+    st.header("🛡️ กลไก Dynamic Stop Loss (ATR)")
     st.markdown("""
-    ### 🛡️ กลไกการคุมความเสี่ยง (The 1% Rule)
-    ระบบนี้ใช้หลักการ **Fixed Fractional Position Sizing** เพื่อให้พอร์ตของคุณ "ไม่มีวันพัง" (Zero Ruin)
-    
-    1. **Risk Amount:** ระบบคำนวณเงินที่ยอมเสียได้สูงสุด (เช่น 1% ของพอร์ต) 
-    2. **Stop Loss (SL):** ตั้งจุดหนีไว้ที่ 3% จากราคาซื้อ เพื่อจำกัดความเสียหาย
-    3. **Position Sizing:** ระบบจะคำนวณจำนวนหุ้นที่ซื้อโดย: `จำนวนหุ้น = เงินที่ยอมเสียได้ / (ราคาซื้อ - ราคา SL)`
-    
-    > **ผลลัพธ์:** ต่อให้คุณทายหุ้นผิดติดต่อกันหลายครั้ง เงินในพอร์ตจะลดลงทีละนิดเท่านั้น (1%) ทำให้คุณมีโอกาสแก้มือได้เสมอ
+    ### 🌀 ATR คืออะไร?
+    **Average True Range (ATR)** คือตัววัดความผันผวนของราคาหุ้นในช่วงที่ผ่านมา
+    1. **Dynamic Risk:** ระบบจะไม่ใช้ 3% ตายตัว แต่จะใช้ **2 x ATR** เพื่อตั้งจุดหนี
+    2. **Whipsaw Protection:** ช่วยป้องกันการโดนสะบัดหลุดในหุ้นที่ผันผวนสูง
+    3. **Smart Sizing:** ถ้าหุ้นผันผวนมาก ระบบจะสั่งให้ซื้อหุ้นน้อยลงเพื่อคุมความเสี่ยง
     """)
-    
 
-# --- TAB 3: การทำงานของระบบ (Internal Manual) ---
 with tab3:
-    st.header("⚙️ เจาะลึกโครงสร้าง Safe Heaven Quant Pro Max")
+    st.header("⚙️ ระบบภายใน Version 2.0 (ATR Enabled)")
+    st.info("อัปเกรดล่าสุด: ปรับปรุงโครงสร้าง String และเปลี่ยนสี Volume เป็น Silver")
+
+with tab1:
+    st.title("🛡️ Safe Heaven Quant Pro Max V.2")
     
-    col_a, col_b = st.columns(2)
+    st.sidebar.header("💰 Portfolio Settings")
+    portfolio_size = st.sidebar.number_input("เงินทุนทั้งหมด (บาท):", min_value=1000, value=100000, step=1000)
+    risk_per_trade = st.sidebar.slider("ความเสี่ยงต่อการเทรด (%):", 0.5, 5.0, 1.0)
     
-    with col_a:
-        st.subheader("🔍 กลไกภายใน (Logic Flow)")
-        st.info("""
-        1. **Data Pulling:** ดึงข้อมูลย้อนหลัง 2 ปี ผ่าน yfinance API เพื่อหาค่าเฉลี่ยระยะยาว
-        2. **Technical Filter:**
-            - **Trend:** ต้องอยู่เหนือ **SMA 200** (คัดกรองเฉพาะหุ้นขาขึ้น)
-            - **Momentum:** **RSI < 40** (หาจังหวะ Buy on Dip หรือจุดที่ราคาย่อตัวมากเกินไป)
-            - **Volume:** ปริมาณการซื้อขาย > **เฉลี่ย 5 วัน** (ยืนยันแรงซื้อจากรายใหญ่)
-        3. **Execution Plan:** คำนวณจำนวนหุ้นที่สัมพันธ์กับเงินต้นและความเสี่ยง 1% ทันที
-        """)
-        
-    with col_b:
-        st.subheader("✅ ปรัชญาของระบบ")
-        st.markdown("""
-        - **Safe
+    st.sidebar.divider()
+    st.sidebar.header("🔍 Asset Management")
+    default_assets = ["NVDA", "AAPL", "TSLA", "BTC-USD", "SET50.BK"]
+    selected_assets = st.sidebar.multiselect("เลือกหุ้นแนะนำ:", options=list(set(default_assets + ["MSFT", "GOOGL", "PTT.BK", "CPALL.BK", "GC=F"])), default=default_assets)
+    custom_ticker = st.sidebar.text_input("➕ เพิ่มหุ้นอื่นๆ:").upper().strip()
+    
+    final_list = list(selected_assets)
+    if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
+
+    def get_data(ticker, interval, data_period):
+        try:
+            thai_tickers =
