@@ -9,18 +9,19 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Gemini Master Quant v2.2 Pro", layout="wide")
+st.set_page_config(page_title="Gemini Master Quant v2.3 Pro", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
     .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
+    .highlight-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 10px; border: 1px solid #3b82f6; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & SECURITY ---
 DB_FILE = "portfolio_data_v2.json"
 BAK_FILE = "portfolio_data_v2.json.bak"
-USD_THB_RATE = 36.0 # ค่าเงินบาทโดยประมาณ (สามารถพัฒนาให้ดึง Real-time ได้)
+USD_THB_RATE = 36.0 
 
 def load_portfolio():
     for file in [DB_FILE, BAK_FILE]:
@@ -33,33 +34,35 @@ def load_portfolio():
 def save_portfolio(data):
     try:
         with open(DB_FILE, "w") as f: json.dump(data, f)
-        shutil.copy(DB_FILE, BAK_FILE) # Auto-backup
+        shutil.copy(DB_FILE, BAK_FILE) 
     except Exception as e:
         st.error(f"Error saving portfolio: {e}")
 
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
-    # Auto-mapping หุ้นไทยยอดนิยม
     thai_stocks = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS"]
     if ticker in thai_stocks and not ticker.endswith(".BK"):
         return ticker + ".BK"
     return ticker
 
-# --- 3. CORE QUANT ENGINE (BULK OPTIMIZED) ---
+# --- 3. CORE QUANT ENGINE (BULK & ERROR PROOF) ---
 @st.cache_data(ttl=1800)
 def fetch_all_data(tickers):
     if not tickers: return {}
     try:
-        # ดึงข้อมูลแบบ Bulk เพื่อลด Request (ความปลอดภัยด้าน Stability)
         raw_data = yf.download(tickers, period="2y", interval="1d", auto_adjust=True, progress=False)
         processed = {}
         for t in tickers:
-            if len(tickers) > 1:
-                df = raw_data.xs(t, axis=1, level=1) if isinstance(raw_data.columns, pd.MultiIndex) else raw_data
+            # จัดการโครงสร้าง Multi-index กรณีดาวน์โหลดหลายตัว
+            if isinstance(raw_data.columns, pd.MultiIndex):
+                if t in raw_data.columns.get_level_values(1):
+                    df = raw_data.xs(t, axis=1, level=1).copy()
+                else: continue
             else:
-                df = raw_data
+                df = raw_data.copy()
             
+            # ตรวจสอบความสมบูรณ์ของข้อมูลก่อนคำนวณ (ป้องกัน IndexError)
             if df.empty or len(df) < 200: continue
             
             # --- Indicators ---
@@ -73,31 +76,39 @@ def fetch_all_data(tickers):
             df['ATR'] = tr.rolling(14).mean()
             df['SL'] = df['Close'] - (df['ATR'] * 2.5)
             df['Vol_Avg20'] = df['Volume'].rolling(20).mean()
-            df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20']
+            df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan) # กันหารศูนย์
+            
             processed[t] = df.dropna()
         return processed
     except Exception as e:
         st.error(f"Data Fetch Error: {e}")
         return {}
 
-# --- 4. SIDEBAR & LOGIC ---
+# --- 4. SIDEBAR ---
 if 'my_portfolio' not in st.session_state:
     st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.title("🛡️ Secure Quant Pro v2.2")
+    st.title("🛡️ Secure Quant Pro v2.3")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
     st.divider()
-    watchlist_input = st.text_area("Add Tickers (comma separated):", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
+    watchlist_input = st.text_area("Tickers:", "NVDA, AAPL, PTT, DELTA, BTC-USD, GOLD")
     raw_tickers = [t.strip() for t in watchlist_input.split(",") if t.strip()]
     final_watchlist = list(dict.fromkeys([format_ticker(t) for t in raw_tickers if format_ticker(t)]))
 
-# --- 5. DATA PROCESSING (CURRENCY AWARE) ---
+# --- 5. DATA PROCESSING (INDEX-SAFE LOOP) ---
 data_dict = fetch_all_data(final_watchlist)
 results = []
 
-for ticker, df in data_dict.items():
+for ticker in final_watchlist:
+    if ticker not in data_dict or data_dict[ticker].empty:
+        continue
+        
+    df = data_dict[ticker]
+    # ตรวจสอบความยาวข้อมูลอีกครั้งก่อน iloc
+    if len(df) < 2: continue
+    
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     p = curr['Close']
@@ -109,18 +120,15 @@ for ticker, df in data_dict.items():
     elif p < curr['SMA200']: sig = "🔴 BEARISH"
     else: sig = "⚪ NEUTRAL"
 
-    # --- Secure Position Sizing (Currency Aware) ---
+    # Currency Handling
     risk_cash_thb = capital * (risk_pct / 100)
-    sl_gap = p - curr['SL']
-    safe_sl_gap = max(sl_gap, 0.01)
-    
-    # เช็คว่าเป็นหุ้น USD หรือไม่ (Logic พื้นฐาน: ไม่มี .BK)
+    sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
+    
     if is_usd:
-        risk_cash_converted = risk_cash_thb / USD_THB_RATE
-        qty = int(risk_cash_converted / safe_sl_gap) if p > curr['SL'] else 0
+        qty = int((risk_cash_thb / USD_THB_RATE) / sl_gap) if p > curr['SL'] else 0
     else:
-        qty = int(risk_cash_thb / safe_sl_gap) if p > curr['SL'] else 0
+        qty = int(risk_cash_thb / sl_gap) if p > curr['SL'] else 0
 
     results.append({
         "Asset": ticker, "Price": round(p, 2), "Regime": sig, 
@@ -135,7 +143,10 @@ tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Analyt
 
 with tabs[0]:
     st.subheader("📊 Market Opportunities")
-    st.dataframe(res_df, use_container_width=True, hide_index=True)
+    if not res_df.empty:
+        st.dataframe(res_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("ไม่มีข้อมูลเพียงพอสำหรับการวิเคราะห์ กรุณาตรวจสอบชื่อ Ticker")
 
 with tabs[1]:
     if data_dict:
@@ -163,54 +174,46 @@ with tabs[2]:
             st.rerun()
 
     if st.session_state.my_portfolio:
-        p_data = []
+        p_list = []
         for asset, info in st.session_state.my_portfolio.items():
             if asset in data_dict:
                 cp = data_dict[asset]['Close'].iloc[-1]
                 sl = data_dict[asset]['SL'].iloc[-1]
                 pnl = (cp - info['entry']) * info['qty']
-                status = "✅ HOLD" if cp > sl else "🚨 EXIT NOW"
-                p_data.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": status})
-        if p_data:
-            st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
+                p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": round(pnl, 2), "Signal": "✅ HOLD" if cp > sl else "🚨 EXIT"})
+        if p_list:
+            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
             if st.button("🗑️ Reset Portfolio"):
                 save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.subheader("🧪 Advanced Analytics")
-    col_left, col_right = st.columns([2, 1])
-    with col_left:
+    st.subheader("🧪 Advanced Analytics & Risk")
+    col_l, col_r = st.columns([2, 1])
+    with col_l:
         price_dict = {t: df['Close'] for t, df in data_dict.items()}
         if len(price_dict) > 1:
             corr_df = pd.DataFrame(price_dict).dropna().corr()
             fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
             fig_corr.update_layout(height=450, template="plotly_dark")
             st.plotly_chart(fig_corr, use_container_width=True)
-    with col_right:
+    with col_r:
         st.write("### 🏗️ Future Modules")
-        for m in ["Backtesting Engine", "Sector Rotation", "Fundamental Score"]: st.checkbox(m, disabled=True)
+        for m in ["Backtesting", "Sector Rotation", "AI Sentiment"]: st.checkbox(m, disabled=True)
         st.divider()
-        st.write("### 🛡️ Risk Summary")
         if st.session_state.my_portfolio:
-            total_risk_thb = 0
-            for a, info in st.session_state.my_portfolio.items():
-                if a in data_dict:
-                    sl = data_dict[a]['SL'].iloc[-1]
-                    risk = (info['entry'] - sl) * info['qty']
-                    if not a.endswith(".BK"): risk *= USD_THB_RATE # แปลงความเสี่ยงหุ้นนอกกลับเป็น THB
-                    total_risk_thb += max(risk, 0)
-            st.metric("Total Cash at Risk (THB)", f"{total_risk_thb:,.2f}")
-            st.progress(min(total_risk_thb / capital, 1.0))
+            t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (USD_THB_RATE if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
+            st.metric("Total Cash at Risk (THB)", f"{t_risk:,.2f}")
+            st.progress(min(t_risk / capital, 1.0) if capital > 0 else 0)
 
 with tabs[5]:
     st.header("🧠 System Architecture & Quant Logic")
     st.markdown("""
-    ### 1. ระบบจัดการข้อมูล (Data Engine & Persistence)
+    ### 1. ระบบจัดการข้อมูล (Data Engine)
     * **Bulk Download:** ดึงข้อมูลรวดเดียวเพื่อลด Request และป้องกันการโดน Yahoo Finance แบน
-    * **Currency Aware:** ระบบแยกแยะหุ้น THB/USD และใช้ FX Rate ในการคำนวณเงินต้นที่เสี่ยงได้
-    * **Auto-Backup:** ทุกการบันทึกพอร์ตจะทำไฟล์สำรอง `.bak` ทันทีเพื่อความปลอดภัย
+    * **Index-Out-of-Bounds Protection:** ตรวจสอบความว่างเปล่าของ DataFrame ก่อนเข้าถึงแถวข้อมูล (แก้บั๊ก IndexError)
+    * **Auto-Backup:** ระบบสำรองไฟล์ `.bak` อัตโนมัติ ป้องกันพอร์ตเสียหาย
     
     ### 2. สูตรคำนวณเด่น
     * **Position Sizing (USD):** $$Quantity = \\frac{(Capital_{THB} \\times Risk\%) / FX\_Rate}{Price_{USD} - SL_{USD}}$$
-    * **RSI Wilder's Smoothing:** ลดความผันผวนของอินดิเคเตอร์เพื่อหาจุดเข้าที่นิ่งขึ้น
+    * **ATR Stop-Loss:** ใช้ค่าเฉลี่ยความผันผวนย้อนหลัง 14 วัน คูณ 2.5 เพื่อหาจุดตัดขาดทุนที่เหมาะสม
     """)
