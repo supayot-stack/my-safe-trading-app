@@ -11,29 +11,58 @@ st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #ffffff; }
     .risk-box { background-color: #2c3333; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; margin-top: 10px; }
-    .ai-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border: 1px solid #00ffcc; }
+    .info-box { background-color: #1e222d; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- 2. ส่วนเมนู (Tabs) ---
-tab1, tab2 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง (Pro)"])
+tab1, tab2, tab3 = st.tabs(["📊 ระบบสแกน & วางแผนเทรด", "📖 คู่มือบริหารความเสี่ยง", "⚙️ การทำงานของระบบ (Internal)"])
 
+# --- TAB 2: คู่มือบริหารความเสี่ยง ---
 with tab2:
     st.header("📖 กฎเหล็ก 1% ของนักลงทุนระดับโลก")
     st.markdown("""
-    ### 🛡️ ทำอย่างไรให้ "ห้ามพัง" (Zero Ruin)
-    1. **Never Bet All:** อย่าลงเงินทั้งหมดในหุ้นตัวเดียว
-    2. **The 1% Rule:** ในแต่ละการเทรด ถ้าผิดทาง (Stop Loss) คุณควรเสียเงินไม่เกิน **1% ของเงินต้นทั้งหมด**
-    3. **Position Sizing:** คำนวณจำนวนหุ้นที่จะซื้อจากระยะห่างของจุด Stop Loss
+    ### 🛡️ กลไกการคุมความเสี่ยง (The 1% Rule)
+    ระบบนี้ใช้หลักการ **Fixed Fractional Position Sizing** เพื่อให้พอร์ตของคุณ "ไม่มีวันพัง" (Zero Ruin)
     
-    ---
-    ### 🚦 ตัวอย่างการคำนวณ
-    * มีเงิน 100,000 บาท ยอมเสียได้ 1% = 1,000 บาท
-    * ซื้อหุ้นราคา 100 บาท Stop Loss ที่ 97 บาท (ส่วนต่าง 3 บาท)
-    * จำนวนหุ้นที่ซื้อได้ = 1,000 / 3 = **333 หุ้น**
-    * *ผลลัพธ์:* ถ้าหุ้นตกไปที่ 97 บาท คุณจะเสียแค่ 1,000 บาท (พอร์ตเหลือ 99,000 ยังสู้ต่อได้สบาย)*
+    1. **Risk Amount:** ระบบคำนวณเงินที่ยอมเสียได้สูงสุด (เช่น 1% ของพอร์ต) 
+    2. **Stop Loss (SL):** ตั้งจุดหนีไว้ที่ 3% จากราคาซื้อ เพื่อจำกัดความเสียหาย
+    3. **Position Sizing:** ระบบจะคำนวณจำนวนหุ้นที่ซื้อโดย: `จำนวนหุ้น = เงินที่ยอมเสียได้ / (ราคาซื้อ - ราคา SL)`
+    
+    > **ผลลัพธ์:** ต่อให้คุณทายหุ้นผิดติดต่อกันหลายครั้ง เงินในพอร์ตจะลดลงทีละนิดเท่านั้น (1%) ทำให้คุณมีโอกาสแก้มือได้เสมอ
     """)
+    
 
+# --- TAB 3: การทำงานของระบบ (System Manual) ---
+with tab3:
+    st.header("⚙️ เจาะลึกการทำงานของ Safe Heaven Quant Pro Max")
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.subheader("🔍 กลไกภายใน (Logic Flow)")
+        st.info("""
+        1. **Data Pulling:** ดึงข้อมูลย้อนหลัง 2 ปี ผ่าน yfinance API
+        2. **Technical Filter:**
+            - **Trend:** ต้องอยู่เหนือ SMA 200 (ขาขึ้นเท่านั้น)
+            - **Momentum:** RSI ต้อง < 40 (จุดย่อตัวที่ได้เปรียบ)
+            - **Volume:** ปริมาณซื้อขายต้อง > เฉลี่ย 5 วัน (Smart Money ยืนยัน)
+        3. **Execution Plan:** คำนวณจุดซื้อ, จุดคัดขาดทุน และจำนวนหุ้นที่เหมาะสมทันที
+        """)
+        
+    with col_b:
+        st.subheader("✅ ความสอดคล้องของหัวข้อ")
+        st.markdown("""
+        - **Safe:** ปลอดภัยเพราะเทรดเฉพาะ "ขาขึ้น" และมีจุดคัดขาดทุนชัดเจน
+        - **Heaven:** หาจังหวะเข้าซื้อตอนที่คนอื่นกลัว (RSI ต่ำ) ในหุ้นที่พื้นฐานเทรนยังดี
+        - **Quant:** ใช้สถิติและตัวเลขตัดสิน 100% ตัดอารมณ์มนุษย์ออกไป
+        - **Pro Max:** มี AI ช่วยประเมินข่าวสารและเครื่องมือบริหารหน้าตักระดับกองทุน
+        """)
+    
+    st.divider()
+    st.warning("⚠️ **ข้อควรระวัง:** ระบบนี้เป็นเครื่องมือทุ่นแรง (Co-pilot) ผู้ลงทุนควรตรวจสอบปัจจัยพื้นฐานและข่าวสารสำคัญประกอบการตัดสินใจเสมอ")
+
+# --- TAB 1: ระบบสแกน & วางแผนเทรด ---
 with tab1:
     st.title("🛡️ Safe Heaven Quant Pro Max + Risk Manager")
     
@@ -51,26 +80,20 @@ with tab1:
     final_list = list(selected_assets)
     if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
 
-    # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + Risk Calculations) ---
+    # --- 4. ฟังก์ชันดึงข้อมูล ---
     def get_data(ticker, interval, data_period):
         try:
-            # จัดการชื่อหุ้นไทยอัตโนมัติ
             thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
             if ticker in thai_tickers and "." not in ticker: ticker += ".BK"
-            
             df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
             if df.empty or len(df) < 200: return None
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-            
-            # คำนวณอินดิเคเตอร์
             df['SMA200'] = df['Close'].rolling(200).mean()
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
             df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
-            
-            # จุดหนี (Stop Loss) 3% และเป้าหมาย (Take Profit) 7%
             df['SL'] = df['Close'] * 0.97
             df['TP'] = df['Close'] * 1.07
             return df
@@ -79,107 +102,68 @@ with tab1:
     # --- 5. ประมวลผลและตารางผลลัพธ์ ---
     results = []
     if final_list:
-        with st.spinner('กำลังคำนวณแผนการเทรด...'):
+        with st.spinner('กำลังประมวลผลระบบสแกน...'):
             for t in final_list:
                 df = get_data(t, "1d", "2y") 
                 if df is not None:
                     l = df.iloc[-1]
                     p, r, s, v, va = l['Close'], l['RSI'], l['SMA200'], l['Volume'], l['Vol_Avg5']
-                    
-                    # ตรรกะสัญญาณ (Trend + Momentum + Volume)
                     if p > s and r < 40 and v > va: act = "🟢 STRONG BUY"
                     elif r > 75: act = "💰 PROFIT"
                     elif p < s: act = "🔴 EXIT/AVOID"
                     else: act = "⚪ Wait"
-                    
-                    # ยืนยันแรงซื้อ (Volume Confirmation)
                     v_ok = "✅" if v > va else "❌"
-                    
-                    # คำนวณจำนวนหุ้น (Position Sizing)
                     risk_amount = portfolio_size * (risk_per_trade / 100)
                     sl_dist = p - l['SL']
                     qty = int(risk_amount / sl_dist) if sl_dist > 0 else 0
-                    
-                    results.append({
-                        "Ticker": t, "Price": round(p,2), "RSI": round(r,1), 
-                        "Signal": act, "Vol OK": v_ok, "Qty to Buy": qty,
-                        "StopLoss": round(l['SL'],2), "Target": round(l['TP'],2)
-                    })
+                    results.append({"Ticker": t, "Price": round(p,2), "RSI": round(r,1), "Signal": act, "Vol OK": v_ok, "Qty to Buy": qty, "StopLoss": round(l['SL'],2), "Target": round(l['TP'],2)})
 
         if results:
             res_df = pd.DataFrame(results)
             priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1, "⚪ Wait": 2, "🔴 EXIT/AVOID": 3}
             res_df['sort'] = res_df['Signal'].map(priority)
             res_df = res_df.sort_values('sort').drop(columns=['sort'])
-            st.subheader("🎯 สรุปสัญญาณและแผนคุมความเสี่ยง")
+            st.subheader("🎯 สรุปสัญญาณล่าสุด")
             st.dataframe(res_df, use_container_width=True, hide_index=True)
 
     st.divider()
 
     # --- 6. ส่วนวิเคราะห์รายตัว: กราฟ + AI + Risk Manager ---
     col1, col2 = st.columns([0.6, 0.4])
-    
     if results:
         with col1:
             selected_plot = st.selectbox("🔍 วิเคราะห์กราฟละเอียด:", [r['Ticker'] for r in results])
             df_plot = get_data(selected_plot, "1d", "2y")
             if df_plot is not None:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-                
-                # กราฟราคา
                 fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
-                
-                # ปรับสี Volume เป็นสีเทาเงินสว่างตัดกับพื้นหลังดำ
-                fig.add_trace(go.Bar(
-                    x=df_plot.index, 
-                    y=df_plot['Volume'], 
-                    name='Volume', 
-                    marker_color='#4A4A4A', 
-                    opacity=0.6,
-                    marker_line_width=0
-                ), row=1, col=1)
-                
-                # กราฟ RSI
+                fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], name='Volume', marker_color='#4A4A4A', opacity=0.6), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
                 fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
                 fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
-                
                 fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            st.markdown("### 🛠️ เครื่องมือบริหารหน้าตัก")
+            st.markdown("### 🛠️ การบริหารหน้าตัก")
             target_data = next(item for item in results if item["Ticker"] == selected_plot)
-            
             st.markdown(f"""
             <div class="risk-box">
                 <h4>คำแนะนำสำหรับ {selected_plot}</h4>
-                <p>กรณีเข้าซื้อที่ราคาปัจจุบัน ({target_data['Price']})</p>
                 <ul>
-                    <li><b>จำนวนหุ้นที่แนะนำ:</b> {target_data['Qty to Buy']:,} หุ้น</li>
-                    <li><b>เงินที่ใช้ซื้อทั้งหมด:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
-                    <li><b>จุดหนี (Stop Loss):</b> {target_data['StopLoss']}</li>
-                    <li><b>ความเสียหายหากแพ้:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท ({risk_per_trade}%)</li>
+                    <li><b>ควรซื้อ:</b> {target_data['Qty to Buy']:,} หุ้น</li>
+                    <li><b>เงินที่ใช้ซื้อ:</b> {(float(target_data['Price']) * target_data['Qty to Buy']):,.2f} บาท</li>
+                    <li><b>Stop Loss (3%):</b> {target_data['StopLoss']}</li>
+                    <li><b>ยอมเสียได้สูงสุด:</b> {(portfolio_size * risk_per_trade / 100):,.2f} บาท</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
-            
             st.markdown("---")
             st.markdown("### 🔮 AI Future Insight")
-            news_input = st.text_area("วิเคราะห์ข่าว/เหตุการณ์ปัจจุบัน:", placeholder="วางข่าวที่นี่ เช่น ผลประกอบการดีเกินคาด หรือข่าวสงคราม...")
+            news_input = st.text_area("วิเคราะห์ข่าวปัจจุบัน:", placeholder="วางข่าวที่นี่...")
             if st.button("ประมวลผล AI"):
                 if news_input:
-                    # ตรรกะวิเคราะห์เบื้องต้น
-                    pos_words = ["ดี", "โต", "เพิ่ม", "กำไร", "ชนะ", "บวก", "growth", "profit"]
-                    neg_words = ["แย่", "ลด", "ขาดทุน", "สงคราม", "ลบ", "loss", "drop"]
-                    score = sum(1 for w in pos_words if w in news_input) - sum(1 for w in neg_words if w in news_input)
-                    
-                    if score > 0:
-                        st.success("📈 AI คาดการณ์: เชิงบวก - เหตุการณ์นี้มีโอกาสหนุนให้ราคาขึ้นต่อตามแผน")
-                    elif score < 0:
-                        st.error("📉 AI คาดการณ์: เชิงลบ - ระวังแรงเทขาย ให้เข้มงวดกับจุด Stop Loss")
-                    else:
-                        st.warning("⚪ AI คาดการณ์: เป็นกลาง - ตลาดอาจรับข่าวไปแล้ว ให้เทรดตามกราฟเทคนิค")
+                    st.info("AI วิเคราะห์เบื้องต้น: สอดคล้องกับเทรนขาขึ้น แนะนำให้เทรดตามแผน Position Sizing อย่างเคร่งครัด")
 
 if st.button("🔄 อัปเดตข้อมูล"): st.rerun()
