@@ -118,7 +118,7 @@ with st.spinner('Scanning Market...'):
 res_df = pd.DataFrame(results)
 
 # --- 6. MAIN TERMINAL ---
-t1, t2, t3, t4, t5 = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Analytics", "📖 Guide"])
+t1, t2, t3, t4, t5, t6 = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Analytics", "📖 Guide", "🧠 System Architecture"])
 
 with t1:
     st.subheader("📊 Market Opportunities")
@@ -133,23 +133,11 @@ with t2:
         df_p = data_dict[sel]
         
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.35])
-        
-        # Price Trace
         fig.add_trace(go.Candlestick(x=df_p.index, open=df_p['Open'], high=df_p['High'], low=df_p['Low'], close=df_p['Close'], name='Price'), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SMA200'], name='SMA 200', line=dict(color='yellow')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['SL'], name='Stop-Loss', line=dict(color='red', dash='dot')), row=1, col=1)
-        
-        # RSI Trace
         fig.add_trace(go.Scatter(x=df_p.index, y=df_p['RSI'], name='RSI', line=dict(color='cyan')), row=2, col=1)
-        
-        # Volume Trace (เปลี่ยนเป็นสีเงิน silver)
-        fig.add_trace(go.Bar(
-            x=df_p.index, 
-            y=df_p['Volume'], 
-            name='Volume',
-            marker_color='#c0c0c0', # สีเงิน (Silver)
-            opacity=0.6
-        ), row=3, col=1)
+        fig.add_trace(go.Bar(x=df_p.index, y=df_p['Volume'], name='Volume', marker_color='#c0c0c0', opacity=0.6), row=3, col=1)
         
         fig.update_layout(height=700, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(fig, use_container_width=True)
@@ -183,35 +171,57 @@ with t3:
                 save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with t4:
-    st.subheader("🧪 Advanced Analytics & Roadmap")
-    col_left, col_right = st.columns(2)
-    
-    with col_left:
-        st.write("### 🔗 Asset Correlation")
-        price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
-        if len(price_dict) > 1:
-            corr_df = pd.DataFrame(price_dict).dropna().corr()
-            fig_corr = go.Figure(data=go.Heatmap(
-                z=corr_df.values, x=corr_df.columns, y=corr_df.columns, 
-                colorscale='RdBu_r', zmin=-1, zmax=1
-            ))
-            fig_corr.update_layout(height=400, template="plotly_dark", margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig_corr, use_container_width=True)
-            st.caption("สีแดงเข้ม (ใกล้ 1.0) คือวิ่งตามกันมากเกินไป")
-        else:
-            st.info("เพิ่มหุ้นอย่างน้อย 2 ตัวเพื่อดู Correlation")
-
-    with col_right:
-        st.write("### 🏗️ Future Modules")
-        st.checkbox("Backtesting Engine (RSI Strategy)", disabled=True, value=False)
-        st.checkbox("Sector Rotation Map", disabled=True, value=False)
-        st.checkbox("Fundamental Score (P/E, PEG)", disabled=True, value=False)
+    st.subheader("🧪 Advanced Analytics")
+    price_dict = {ticker: df['Close'] for ticker, df in data_dict.items() if df is not None}
+    if len(price_dict) > 1:
+        corr_df = pd.DataFrame(price_dict).dropna().corr()
+        fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1))
+        fig_corr.update_layout(height=400, template="plotly_dark")
+        st.plotly_chart(fig_corr, use_container_width=True)
 
 with t5:
+    st.markdown("### 📖 Quant Terminal Guide")
+    st.write("1. **Scanner:** หาหุ้นที่มี Regime เป็นสีเขียว")
+    st.write("2. **Money Management:** ปรับ Risk % ใน Sidebar เสมอ")
+
+with t6:
+    st.header("🧠 System Architecture & Quant Logic")
+    st.info("คำอธิบายการทำงานเชิงลึกของระบบ Gemini Master Quant v2.1")
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("""
+        ### 1. ระบบจัดการข้อมูล (Data Engine)
+        * **Data Fetching:** ดึงข้อมูลย้อนหลัง 2 ปีผ่าน `yfinance` รองรับ Multi-index ป้องกันโครงสร้าง Data พัง
+        * **Ticker Formatting:** ระบบ Auto-suffix สำหรับหุ้นไทย (เช่น PTT -> PTT.BK)
+        * **Persistence:** บันทึกพอร์ตลงไฟล์ JSON ทำให้ข้อมูลไม่หายแม้ปิดโปรแกรม
+        
+        ### 2. การคำนวณทาง Quant
+        * **Trend:** ใช้ SMA200 และ SMA50 แยกแยะโครงสร้างราคา
+        * **RSI Wilder's:** คำนวณแบบ Smoothed เพื่อลด Noise หาจังหวะ Pullback
+        * **Volatility Stop-Loss:** ใช้สูตร $$Price - (ATR \\times 2.5)$$ เพื่อให้ราคาหุ้นมีระยะ 'หายใจ' ไม่โดน Stop hunt ง่ายๆ
+        """)
+        
+    with c2:
+        st.markdown("""
+        ### 3. กลยุทธ์ Signal & Regime
+        * **🟢 ACCUMULATE:** ราคา > SMA(50, 200) + RSI ย่อตัว < 45 + Volume Spike > 1.2x
+        * **💰 DISTRIBUTION:** RSI > 80 (Overbought) เตือนแรงขาย
+        * **🔴 BEARISH:** ราคาหลุด SMA200 (Long-term Trend พัง)
+        
+        ### 4. การบริหารหน้าตัก (Position Sizing)
+        * **Risk-Based Sizing:** คำนวณจำนวนหุ้นตามความเสี่ยงที่ยอมรับได้
+        * **สูตร:** $$Quantity = \\frac{Capital \\times Risk\%}{Price - StopLoss}$$
+        * **ผลลัพธ์:** ไม่ว่าหุ้นผันผวนแค่ไหน ถ้าโดน SL คุณจะขาดทุนเป็นเงินที่คงที่เสมอ
+        """)
+        
+    st.divider()
     st.markdown("""
-    ### 📖 Quant Terminal Guide
-    1. **Scanner:** ดู "Regime" เพื่อหาหุ้น (Green = สะสม)
-    2. **Deep-Dive:** ตรวจสอบจุด Stop-loss (เส้นประสีแดง) และ Volume (สีเงิน)
-    3. **Stop-loss Strategy:** ใช้ $ATR \times 2.5$ เพื่อป้องกันความผันผวนปกติ
-    4. **Safety Check:** หาก Correlation สูง ควรเลือกเทรดเพียงตัวเดียวในกลุ่ม
+    ### 5. ส่วนแสดงผล (Professional Visuals)
+    * **Candlestick & Subplots:** แยกส่วน Price, RSI, Volume ให้วิเคราะห์ง่าย
+    * **Silver Volume:** ใช้สีเงิน (#c0c0c0) เพื่อความสบายตาและขับให้เส้น SL สีแดงเด่นชัด
+    * **Correlation Heatmap:** ตรวจสอบการกระจุกตัวของความเสี่ยง (ถ้าแดงเข้ม = หุ้นวิ่งเหมือนกันเกินไป)
+    
+    **สรุปภาพรวม:** โค้ดนี้คือ **Decision Support System** ที่ช่วยให้คุณเทรดด้วย "สถิติ" แทน "อารมณ์"
     """)
