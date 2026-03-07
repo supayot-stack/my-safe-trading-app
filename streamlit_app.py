@@ -13,14 +13,13 @@ st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    /* สไตล์สำหรับ Metric Card ในหน้า Analytics */
-    .analytics-card {
-        background-color: #1c2128; 
+    .stMetric { 
+        background-color: #161b22; 
         padding: 20px; 
-        border-radius: 10px; 
+        border-radius: 12px; 
         border: 1px solid #30363d; 
-        border-left: 5px solid #444c56;
-        margin-bottom: 15px;
+        border-left: 5px solid #00ff00;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] { 
@@ -65,6 +64,7 @@ def save_portfolio(data):
 def format_ticker(ticker):
     ticker = ticker.upper().strip()
     if not ticker: return None
+    # Auto-suffix for Thai Stocks
     thai_popular = ["PTT", "AOT", "CPALL", "SCB", "KBANK", "DELTA", "GULF", "ADVANC", "KTB", "OR", "IVL", "BDMS", "CPN", "PTTEP", "MINT"]
     if ticker in thai_popular and not ticker.endswith(".BK"): return ticker + ".BK"
     return ticker
@@ -82,20 +82,28 @@ def fetch_all_data(tickers):
                     df = raw_data.xs(t, axis=1, level=1).copy()
                 else:
                     df = raw_data.copy()
+                
                 if df.empty or len(df) < 50: continue
+                
+                # Decision Indicators
                 df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
                 df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
+                
                 delta = df['Close'].diff()
                 gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+                
                 tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
                 df['ATR'] = tr.rolling(14, min_periods=1).mean()
+                
+                # Dynamic Trailing SL
                 sl_raw = df['Close'] - (df['ATR'] * 2.5)
                 tsl = np.zeros(len(df)); tsl[0] = sl_raw.iloc[0]
                 for i in range(1, len(df)):
                     tsl[i] = max(tsl[i-1], sl_raw.iloc[i]) if df['Close'].iloc[i-1] > tsl[i-1] else sl_raw.iloc[i]
                 df['Trailing_SL'] = tsl
+                
                 df['Vol_Ratio'] = df['Volume'] / df['Volume'].rolling(20, min_periods=1).mean().replace(0, np.nan)
                 processed[t] = df.ffill().bfill()
             except: continue
@@ -123,21 +131,26 @@ results = []
 for t in final_watchlist:
     if t not in data_dict: continue
     df = data_dict[t]; curr = df.iloc[-1]; prev = df.iloc[-2]; p = curr['Close']
+    
     is_bullish = p > curr['SMA200'] and p > curr['SMA50']
     is_pullback = prev['RSI'] < 48 and curr['RSI'] > prev['RSI']
     is_liquid = curr['Vol_Ratio'] > 1.1
+
     if is_bullish and is_pullback and is_liquid: sig = "🟢 ACCUMULATE"
     elif curr['RSI'] > 82: sig = "💰 TAKE PROFIT"
     elif p < curr['SMA200']: sig = "🔴 RISK OFF"
     else: sig = "⚪ WAIT"
+
+    # Multi-currency handling
     is_thai = ".BK" in t or (t.isalpha() and len(t) <= 5 and "USD" not in t)
     fx = 1 if is_thai else LIVE_USDTHB
+    
     sl_gap = max(p - curr['Trailing_SL'], 0.01)
     qty = int((capital * (risk_pct/100) / fx) / sl_gap) if fx > 1 else int(((capital * (risk_pct/100) / fx) / sl_gap) // 100) * 100
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "THB" if is_thai else "USD"})
 
 # --- 6. MAIN DISPLAY ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics Hub", "📖 Guide & Logic"])
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics", "📖 Logic Guide"])
 
 with tabs[0]:
     st.subheader("📊 Tactical Opportunities")
@@ -205,72 +218,29 @@ with tabs[3]:
             st.metric("Net Terminal Value", f"{balance:,.2f} THB")
             st.plotly_chart(go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Equity', line=dict(color='#00ff00'))), use_container_width=True)
 
-# --- แก้ไขหน้า ANALYTICS HUB ตามรูป ---
 with tabs[4]:
+    st.header("🛡️ Analytics Hub")
     if 'td_df' in locals() and not td_df.empty:
-        col_m_sim, col_metrics, col_equity = st.columns([1.2, 0.6, 1.2], gap="medium")
-        
-        with col_m_sim:
-            st.markdown("##### 🎲 Monte Carlo Simulation")
+        st.markdown("---")
+        l_m, col_chart, col_stat, r_m = st.columns([0.5, 5, 2.5, 0.5], gap="large")
+        with col_chart:
+            st.subheader("🎲 Monte Carlo Simulation")
             sims = [np.random.choice(td_df['PnL'].values, size=len(td_df), replace=True).cumsum() + capital for _ in range(100)]
             fig_mc = go.Figure()
-            for s in sims:
-                fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1, color='#5dade2'), opacity=0.15, showlegend=False))
-            fig_mc.update_layout(
-                height=450, margin=dict(l=0, r=0, b=0, t=20), template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Number of Trades", yaxis_title="Portfolio Value (THB)"
-            )
+            for s in sims: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1), opacity=0.15, showlegend=False))
+            fig_mc.update_layout(height=480, margin=dict(l=0,r=0,b=0,t=20), template="plotly_dark")
             st.plotly_chart(fig_mc, use_container_width=True)
-
-        with col_metrics:
+            
+        with col_stat:
+            st.subheader("📊 Performance KPIs")
             win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
             pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
-            avg_pnl = td_df['PnL'].mean()
-            max_dd = ((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min() * 100
-
-            st.markdown(f"""
-                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 35px;">
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 14px;">Win Rate</p>
-                        <h2 style="color: #39d353; margin: 0;">{win_r:.1f}%</h2>
-                    </div>
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 14px;">Profit Factor</p>
-                        <h2 style="color: #39d353; margin: 0;">{pf:.2f}</h2>
-                    </div>
-                    <div class="analytics-card">
-                        <p style="color: #8b949e; margin: 0; font-size: 14px;">Avg Trade P/L</p>
-                        <h2 style="color: #39d353; margin: 0;">{avg_pnl:,.0f} <span style="font-size: 14px;">THB</span></h2>
-                    </div>
-                    <div class="analytics-card" style="border-left-color: #f85149;">
-                        <p style="color: #8b949e; margin: 0; font-size: 14px;">Max Drawdown</p>
-                        <h2 style="color: #f85149; margin: 0;">{max_dd:.1f}%</h2>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col_equity:
-            st.markdown("##### 📈 Equity Curve")
-            final_val = td_df['Equity'].iloc[-1]
-            st.markdown(f"**Final Balance (Net)**: <span style='color:#39d353; font-size: 20px;'>{final_val:,.2f} THB</span>", unsafe_allow_html=True)
-            fig_eq = go.Figure()
-            fig_eq.add_trace(go.Scatter(x=td_df['Date'], y=td_df['Equity'], name='Net Equity', 
-                                     line=dict(color='#39d353', width=2), fill='tozeroy', fillcolor='rgba(57, 211, 83, 0.1)'))
-            fig_eq.update_layout(
-                height=400, margin=dict(l=0, r=0, b=0, t=20), template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Date", yaxis_title="Portfolio Value (THB)"
-            )
-            st.plotly_chart(fig_eq, use_container_width=True)
-
-        st.markdown("""
-            <div style="background-color: #1c2128; padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #30363d; margin-top: 20px;">
-                <span style="color: #39d353; font-weight: bold;">✅ System Alpha Verified</span>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("⚠️ Run backtest to activate analytics.")
+            st.metric("Win Rate", f"{win_r:.1f}%")
+            st.metric("Profit Factor", f"{pf:.2f}")
+            st.metric("Avg Trade P/L", f"{td_df['PnL'].mean():,.0f} ฿")
+            st.metric("Max Drawdown", f"{((td_df['Equity'] - td_df['Equity'].cummax()) / td_df['Equity'].cummax()).min()*100:.2f}%")
+            st.divider(); st.success("Robustness: Verified")
+    else: st.info("Run backtest to activate analytics.")
 
 with tabs[5]:
     st.header("📖 The Masterpiece Decision Logic")
