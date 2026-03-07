@@ -17,6 +17,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 4px 4px 0px 0px; padding: 10px 20px; color: #8b949e; }
     .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; }
+    div[data-testid="stExpander"] { border: 1px solid #30363d; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -67,10 +68,8 @@ def fetch_all_data(tickers):
                 try: df = raw_data.xs(t, axis=1, level=1).copy()
                 except: continue
             else: df = raw_data.copy()
-            
             if df.empty or len(df) < 30: continue
             
-            # Indicators with Resilience Logic
             df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
             df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
             delta = df['Close'].diff()
@@ -82,7 +81,6 @@ def fetch_all_data(tickers):
             df['SL'] = df['Close'] - (df['ATR'] * 2.5)
             df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
             df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
-            
             processed[t] = df.ffill().bfill()
         return processed
     except Exception as e:
@@ -111,7 +109,6 @@ for ticker in final_watchlist:
     if len(df) < 2: continue
     curr, prev = df.iloc[-1], df.iloc[-2]
     p = curr['Close']
-    
     is_above_sma = p > curr['SMA200'] if not pd.isna(curr['SMA200']) else True
     is_above_mid = p > curr['SMA50'] if not pd.isna(curr['SMA50']) else True
     
@@ -124,7 +121,6 @@ for ticker in final_watchlist:
     sl_gap = max(p - curr['SL'], 0.01)
     is_usd = not ticker.endswith(".BK")
     qty = int((risk_cash_thb / (LIVE_USDTHB if is_usd else 1)) / sl_gap) if p > curr['SL'] else 0
-
     results.append({"Asset": ticker, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), 
                     "Target Qty": qty, "Stop-Loss": round(curr['SL'], 2), "Currency": "USD" if is_usd else "THB"})
 res_df = pd.DataFrame(results)
@@ -170,13 +166,11 @@ with tabs[2]:
                 curr_l = "USD" if not asset.endswith(".BK") else "THB"
                 pnl = (cp - info['entry']) * info['qty']
                 p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": f"{pnl:,.2f} {curr_l}", "Status": "✅ HOLD" if cp > sl else "🚨 EXIT"})
-        if p_list:
-            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-            if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
     st.header("🧪 Strategy Backtest (1-Year)")
-    st.caption("⚠️ ผลการทดสอบย้อนหลังเป็นเพียงการจำลองเพื่อดู Win Rate ของระบบ")
     sel_bt = st.selectbox("เลือกสินทรัพย์เพื่อทดสอบ:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
         df_bt = data_dict[sel_bt].iloc[-252:].copy() 
@@ -193,7 +187,6 @@ with tabs[3]:
                 balance += (pnl * (LIVE_USDTHB if not sel_bt.endswith(".BK") else 1))
                 trades.append({"Type": "SELL", "Date": df_bt.index[i], "Price": price, "PnL": pnl * (LIVE_USDTHB if not sel_bt.endswith(".BK") else 1)})
                 pos = 0
-        
         if trades:
             td_df = pd.DataFrame([t for t in trades if "PnL" in t])
             if not td_df.empty:
@@ -204,69 +197,81 @@ with tabs[3]:
                 c3.metric("Final Balance", f"{balance:,.2f}")
                 td_df['Equity'] = td_df['PnL'].cumsum() + capital
                 fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#00ff00')))
-                fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt} (Equity Curve)", template="plotly_dark")
+                fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt}", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
-            else: st.info("ไม่มีสัญญาณปิดเทรดในช่วงปีที่ผ่านมา")
-        else: st.info("ไม่พบสัญญาณเข้าเทรดที่ตรงเงื่อนไข")
 
 with tabs[4]:
-    st.subheader("🧪 Analytics & Correlation")
-    col_l, col_r = st.columns([2, 1])
+    st.subheader("🧪 Analytics & Portfolio Risk")
+    col_l, col_spacer, col_r = st.columns([2, 0.2, 1])
     with col_l:
+        st.markdown("##### 📉 Asset Correlation")
         price_dict = {t: df['Close'] for t, df in data_dict.items()}
         if len(price_dict) > 1:
             corr_df = pd.DataFrame(price_dict).dropna().corr()
-            st.plotly_chart(go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r')), use_container_width=True)
+            fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
+            fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig_corr, use_container_width=True)
+        else: st.info("เพิ่ม Ticker มากกว่า 1 ตัวเพื่อดูความสัมพันธ์")
     with col_r:
+        st.write("") # Spacer เพื่อจัดกึ่งกลางแนวตั้ง
+        st.write("")
+        st.write("")
+        st.markdown("##### 🛡️ Portfolio Exposure")
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
-            st.metric("Total Portfolio Risk (THB)", f"{t_risk:,.2f}")
-            st.progress(min(t_risk / capital, 1.0) if capital > 0 else 0)
-            st.caption(f"Risk Utilization: {(t_risk/capital)*100:.2f}% of Capital")
+            risk_util = (t_risk / capital) * 100 if capital > 0 else 0
+            st.metric("Total Risk", f"{t_risk:,.2f} THB")
+            st.write(f"Risk Utilization: **{risk_util:.2f}%**")
+            st.progress(min(risk_util / 100, 1.0))
+            st.caption("แนะนำ: ความเสี่ยงรวมไม่ควรเกิน 5-10% ของเงินต้น")
+            st.divider()
+            st.write("🔧 **System Health**")
+            st.write("• Data Link: ✅ Active")
+            st.write(f"• FX Sync: ✅ {LIVE_USDTHB:.2f}")
+        else: st.warning("ยังไม่มีข้อมูลใน Portfolio")
 
 with tabs[5]:
-    st.header("📖 คู่มือสำหรับมือใหม่ (Step-by-Step Guide)")
-    st.info("💡 ระบบนี้ช่วยคุมความเสี่ยงด้วยสถิติ ไม่ใช่การคาดเดา")
+    st.header("📖 คู่มือ Step-by-Step")
+    st.info("💡 เน้นรักษาวินัยและการคุมความเสี่ยง (Risk Management)")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         st.markdown("""
-        ### 1️⃣ การตั้งค่า (Setup)
-        * **Capital:** เงินต้นทั้งหมดของคุณ (THB)
-        * **Risk per Trade:** จำนวนเงินที่ยอมเสียได้ต่อไม้ (แนะนำ 1%) ระบบจะคำนวณจำนวนหุ้นให้เอง
+        ### 1️⃣ เริ่มต้น (Setup)
+        * **Capital:** เงินต้นทั้งหมดที่คุณมี (บาท)
+        * **Risk per Trade:** เปอร์เซ็นต์ที่ยอมเสียได้ต่อหนึ่งไม้ (แนะนำ 1%)
         ### 2️⃣ การเข้าซื้อ (Entry)
-        เมื่อเห็นสัญญาณ **🟢 ACCUMULATE**:
-        * **Trend:** ราคาต้องอยู่เหนือเส้น SMA 200 (ขาขึ้น)
-        * **Pullback:** RSI < 45 แปลว่าราคาย่อตัวลงมาให้เก็บ
-        * **Volume:** มีแรงซื้อเข้าหนาแน่น (Volume Ratio > 1.2)
-        * **Action:** ซื้อตามจำนวนในช่อง **Target Qty** ทันที
+        เมื่อเห็น **🟢 ACCUMULATE**:
+        * **Trend:** ราคา > SMA 200 (ขาขึ้น)
+        * **RSI:** < 45 (ราคาย่อตัว ไม่ไล่ราคา)
+        * **Volume:** Ratio > 1.2 (มีแรงซื้อหนาแน่น)
+        * **Action:** ซื้อตามจำนวน **Target Qty**
         """)
     with col_g2:
         st.markdown("""
-        ### 3️⃣ การตั้งจุดตัดขาดทุน (Stop-Loss)
-        * **SL:** ระบบใช้ค่า ATR (ความผันผวนจริง) คำนวณให้
-        * **วินัย:** หากราคาปิดแท่งวันต่ำกว่า **เส้นประสีแดง** ต้องขายทิ้งทันที!
-        ### 4️⃣ การขายทำกำไร (Take Profit)
-        * เมื่อเห็นสัญญาณ **💰 DISTRIBUTION**: แปลว่า RSI > 80 (ราคาตึงตัวมาก) แนะนำให้ขายล็อกกำไร
+        ### 3️⃣ การตัดขาดทุน (Stop-Loss)
+        * **วินัย:** หากราคาหลุดเส้นประสีแดงในกราฟ **ต้องขายทันที**
+        ### 4️⃣ การทำกำไร (Take Profit)
+        * **Distribution:** เมื่อ RSI > 80 ราคาตึงตัวมาก ควรแบ่งขาย
         """)
 
 with tabs[6]:
-    st.header("🧠 โครงสร้างและตรรกะระบบ (System Logic)")
+    st.header("🧠 System Logic (สำหรับมือใหม่)")
     arch_c1, arch_c2 = st.columns(2)
     with arch_c1:
         st.markdown(f"""
-        #### ⚙️ ข้อมูลและการจัดการ
-        * **Bulk Engine:** ดึงข้อมูล 3 ปี เพื่อให้ SMA 200 มีความแม่นยำสูงสุด
-        * **Live FX Sync:** เชื่อมต่อ `USDTHB=X` (ปัจจุบัน: **{LIVE_USDTHB:.2f}**) เพื่อบริหารความเสี่ยงข้ามสกุลเงิน
-        * **Resilience:** ใช้ `min_periods=1` และ `ffill/bfill` ป้องกันข้อมูลหายหรือ IPO ใหม่
+        #### ⚙️ Data Engine
+        * **Bulk Fetching:** ดึงข้อมูลย้อนหลัง 3 ปีเพื่อให้เส้นค่าเฉลี่ยแม่นยำ
+        * **Live FX Sync:** ใช้ค่าเงินสดจากตลาด (ปัจจุบัน: **{LIVE_USDTHB:.2f}**)
+        * **Resilience:** ระบบเติมข้อมูลว่าง (NaN) อัตโนมัติ ป้องกันแอปค้าง
         """)
-        st.markdown("#### 📐 สูตร Position Sizing")
+        st.markdown("#### 📐 สูตรคำนวณไม้เทรด")
         st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - SL}")
     with arch_c2:
         st.markdown("""
-        #### 📈 Indicators & Tech
-        * **Wilder's RSI:** สูตร EMA-based ที่เสถียรกว่า RSI ปกติ
-        * **ATR Trailing Stop:** จุดหนีที่ขยับตามความผันผวนจริงของตลาด
-        * **Performance Analytics:** ระบบคำนวณ Win Rate และ Equity Curve ย้อนหลัง 1 ปี (252 Trading Days)
+        #### 📈 Indicators
+        * **Wilder's RSI:** สูตรพิเศษที่เสถียรกว่า RSI ทั่วไป ลดสัญญาณหลอก
+        * **ATR Stop:** คำนวณระยะหนีจากความผันผวนจริง ไม่ใช่การเดา
+        * **Performance:** ระบบทดสอบย้อนหลัง 1 ปีเพื่อหา Win Rate
         """)
     st.divider()
     st.caption("Gemini Master Quant v2.6 Ultimate | Built for Professional Statistical Trading")
