@@ -54,11 +54,15 @@ with tab1:
     # --- 4. ฟังก์ชันดึงข้อมูล (Quantitative + Risk Calculations) ---
     def get_data(ticker, interval, data_period):
         try:
-            if any(s in ticker for s in ["PTT", "AOT", "KBANK", "CPALL"]) and "." not in ticker: ticker += ".BK"
+            # จัดการชื่อหุ้นไทยอัตโนมัติ
+            thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
+            if ticker in thai_tickers and "." not in ticker: ticker += ".BK"
+            
             df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
             if df.empty or len(df) < 200: return None
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
+            # คำนวณอินดิเคเตอร์
             df['SMA200'] = df['Close'].rolling(200).mean()
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -66,7 +70,7 @@ with tab1:
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
             df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
             
-            # คำนวณจุดหนี (Stop Loss) ที่ 3% และเป้าหมาย (Take Profit) ที่ 7%
+            # จุดหนี (Stop Loss) 3% และเป้าหมาย (Take Profit) 7%
             df['SL'] = df['Close'] * 0.97
             df['TP'] = df['Close'] * 1.07
             return df
@@ -77,25 +81,28 @@ with tab1:
     if final_list:
         with st.spinner('กำลังคำนวณแผนการเทรด...'):
             for t in final_list:
-                df = get_data(t, "1d", "2y") # ใช้ Daily เป็นฐานการสแกนเทรนด์หลัก
+                df = get_data(t, "1d", "2y") 
                 if df is not None:
                     l = df.iloc[-1]
                     p, r, s, v, va = l['Close'], l['RSI'], l['SMA200'], l['Volume'], l['Vol_Avg5']
                     
-                    # ตรรกะสัญญาณ
+                    # ตรรกะสัญญาณ (Trend + Momentum + Volume)
                     if p > s and r < 40 and v > va: act = "🟢 STRONG BUY"
                     elif r > 75: act = "💰 PROFIT"
                     elif p < s: act = "🔴 EXIT/AVOID"
                     else: act = "⚪ Wait"
                     
-                    # คำนวณจำนวนหุ้นที่ควรซื้อ (Position Sizing)
+                    # ยืนยันแรงซื้อ (Volume Confirmation)
+                    v_ok = "✅" if v > va else "❌"
+                    
+                    # คำนวณจำนวนหุ้น (Position Sizing)
                     risk_amount = portfolio_size * (risk_per_trade / 100)
                     sl_dist = p - l['SL']
                     qty = int(risk_amount / sl_dist) if sl_dist > 0 else 0
                     
                     results.append({
                         "Ticker": t, "Price": round(p,2), "RSI": round(r,1), 
-                        "Signal": act, "Qty to Buy": qty,
+                        "Signal": act, "Vol OK": v_ok, "Qty to Buy": qty,
                         "StopLoss": round(l['SL'],2), "Target": round(l['TP'],2)
                     })
 
@@ -118,16 +125,31 @@ with tab1:
             df_plot = get_data(selected_plot, "1d", "2y")
             if df_plot is not None:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+                
+                # กราฟราคา
                 fig.add_trace(go.Candlestick(x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['SMA200'], name='SMA 200', line=dict(color='#ffcc00', width=2)), row=1, col=1)
-                fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], name='Volume', marker_color='gray', opacity=0.3), row=1, col=1)
+                
+                # ปรับสี Volume เป็นสีเทาเงินสว่างตัดกับพื้นหลังดำ
+                fig.add_trace(go.Bar(
+                    x=df_plot.index, 
+                    y=df_plot['Volume'], 
+                    name='Volume', 
+                    marker_color='#4A4A4A', 
+                    opacity=0.6,
+                    marker_line_width=0
+                ), row=1, col=1)
+                
+                # กราฟ RSI
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['RSI'], name='RSI', line=dict(color='#00ccff', width=1.5)), row=2, col=1)
-                fig.update_layout(height=500, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
+                fig.add_hline(y=70, line_dash="dash", line_color="#ff3366", row=2, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color="#00ffbb", row=2, col=1)
+                
+                fig.update_layout(height=550, template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
                 st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             st.markdown("### 🛠️ เครื่องมือบริหารหน้าตัก")
-            # ดึงข้อมูลตัวที่เลือกมาคำนวณ Risk
             target_data = next(item for item in results if item["Ticker"] == selected_plot)
             
             st.markdown(f"""
@@ -145,9 +167,19 @@ with tab1:
             
             st.markdown("---")
             st.markdown("### 🔮 AI Future Insight")
-            news_input = st.text_area("วิเคราะห์ข่าว/เหตุการณ์สำหรับหุ้นตัวนี้:", placeholder="เช่น ผลประกอบการออกมาดีเกินคาด...")
+            news_input = st.text_area("วิเคราะห์ข่าว/เหตุการณ์ปัจจุบัน:", placeholder="วางข่าวที่นี่ เช่น ผลประกอบการดีเกินคาด หรือข่าวสงคราม...")
             if st.button("ประมวลผล AI"):
                 if news_input:
-                    st.info("AI วิเคราะห์ว่า: เหตุการณ์นี้ส่งผลบวกต่อความมั่นใจในระยะสั้น แนะนำให้เข้าตามแผน Position Sizing ที่คำนวณไว้ข้างต้น")
+                    # ตรรกะวิเคราะห์เบื้องต้น
+                    pos_words = ["ดี", "โต", "เพิ่ม", "กำไร", "ชนะ", "บวก", "growth", "profit"]
+                    neg_words = ["แย่", "ลด", "ขาดทุน", "สงคราม", "ลบ", "loss", "drop"]
+                    score = sum(1 for w in pos_words if w in news_input) - sum(1 for w in neg_words if w in news_input)
+                    
+                    if score > 0:
+                        st.success("📈 AI คาดการณ์: เชิงบวก - เหตุการณ์นี้มีโอกาสหนุนให้ราคาขึ้นต่อตามแผน")
+                    elif score < 0:
+                        st.error("📉 AI คาดการณ์: เชิงลบ - ระวังแรงเทขาย ให้เข้มงวดกับจุด Stop Loss")
+                    else:
+                        st.warning("⚪ AI คาดการณ์: เป็นกลาง - ตลาดอาจรับข่าวไปแล้ว ให้เทรดตามกราฟเทคนิค")
 
 if st.button("🔄 อัปเดตข้อมูล"): st.rerun()
