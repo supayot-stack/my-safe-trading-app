@@ -41,24 +41,79 @@ with tab1:
     custom_ticker = st.sidebar.text_input("➕ เพิ่มหุ้นอื่นๆ:").upper().strip()
     
     final_list = list(selected_assets)
-    if custom_ticker and custom_ticker not in final_list: final_list.append(custom_ticker)
+    if custom_ticker and custom_ticker not in final_list:
+        final_list.append(custom_ticker)
 
-    # --- 4. DATA ENGINE (FIXED RSI SYNTAX) ---
+    # --- 4. DATA ENGINE (FIXED INDENTATION) ---
     def get_data(ticker, interval, data_period):
         try:
             thai_tickers = ["PTT", "AOT", "KBANK", "CPALL", "ADVANC", "OR", "SCC", "SCB"]
-            if ticker in thai_tickers and "." not in ticker: ticker += ".BK"
+            if ticker in thai_tickers and "." not in ticker:
+                ticker += ".BK"
             
             df = yf.download(ticker, period=data_period, interval=interval, auto_adjust=True, progress=False)
-            if df.empty or len(df) < 200: return None
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
-            # SMA 200
+            if df.empty or len(df) < 200:
+                return None
+            
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            
+            # คำนวณอินดิเคเตอร์
             df['SMA200'] = df['Close'].rolling(200).mean()
-            
-            # RSI 14 (FIXED LINE)
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            # ซ่อมวงเล็บตรงนี้:
             df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+            
+            df['Vol_Avg5'] = df['Volume'].rolling(5).mean()
+            df['SL'] = df['Close'] * 0.97
+            df['TP'] = df['Close'] * 1.07
+            return df
+        except Exception as e:
+            # เพิ่มการดักจับ Error เพื่อให้รู้สาเหตุถ้าดึงข้อมูลไม่ได้
+            return None
+
+    # --- 5. SCANNING & RESULTS ---
+    results = []
+    if final_list:
+        with st.spinner('กำลังคำนวณแผนการเทรด...'):
+            for t in final_list:
+                df = get_data(t, "1d", "2y") 
+                if df is not None:
+                    l = df.iloc[-1]
+                    p, r, s, v, va = l['Close'], l['RSI'], l['SMA200'], l['Volume'], l['Vol_Avg5']
+                    
+                    if p > s and r < 40 and v > va:
+                        act = "🟢 STRONG BUY"
+                    elif r > 75:
+                        act = "💰 PROFIT"
+                    elif p < s:
+                        act = "🔴 EXIT/AVOID"
+                    else:
+                        act = "⚪ Wait"
+                    
+                    risk_amount = portfolio_size * (risk_per_trade / 100)
+                    sl_dist = p - l['SL']
+                    qty = int(risk_amount / sl_dist) if sl_dist > 0 else 0
+                    
+                    results.append({
+                        "Ticker": t, "Price": round(p,2), "RSI": round(r,1), 
+                        "Signal": act, "Vol OK": "✅" if v > va else "❌", "Qty to Buy": qty,
+                        "StopLoss": round(l['SL'],2), "Target": round(l['TP'],2)
+                    })
+
+        if results:
+            res_df = pd.DataFrame(results)
+            priority = {"🟢 STRONG BUY": 0, "💰 PROFIT": 1, "⚪ Wait": 2, "🔴 EXIT/AVOID": 3}
+            res_df['sort'] = res_df['Signal'].map(priority)
+            res_df = res_df.sort_values('sort').drop(columns=['sort'])
+            st.subheader("🎯 สรุปสัญญาณล่าสุด")
+            st.dataframe(res_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # --- 6. CHART & ANALYSIS ---
+    col1, col2 = st.columns([0.6, 0.4])
+    if results:
+        with col1
