@@ -9,11 +9,11 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="Master Quant", layout="wide")
+st.set_page_config(page_title="SENTINEL | Institutional Grade", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
-    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; border-left: 5px solid #00ff00; }
+    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; border-left: 5px solid #1f6feb; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { background-color: #161b22; border-radius: 4px 4px 0px 0px; padding: 10px 20px; color: #8b949e; }
     .stTabs [aria-selected="true"] { background-color: #1f6feb !important; color: white !important; }
@@ -22,8 +22,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 2. DATA PERSISTENCE & LIVE FX ---
-DB_FILE = "portfolio_data_v2.json"
-BAK_FILE = "portfolio_data_v2.json.bak"
+DB_FILE = "sentinel_vault.json"
+BAK_FILE = "sentinel_vault.json.bak"
 
 @st.cache_data(ttl=3600) 
 def get_live_fx():
@@ -79,7 +79,6 @@ def fetch_all_data(tickers):
             tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14, min_periods=1).mean()
             
-            # --- Trailing Stop Logic ---
             df['Base_SL'] = df['Close'] - (df['ATR'] * 2.5)
             sl_values = df['Base_SL'].values
             close_values = df['Close'].values
@@ -104,7 +103,12 @@ def fetch_all_data(tickers):
 if 'my_portfolio' not in st.session_state: st.session_state.my_portfolio = load_portfolio()
 
 with st.sidebar:
-    st.title("🛡️ Secure Quant v2.6")
+    st.markdown("""
+        <h1 style='margin-bottom: 0;'>🛡️ SENTINEL</h1>
+        <p style='color: #8b949e; font-size: 0.85rem; font-weight: 600; margin-top: -5px;'>
+            INSTITUTIONAL GRADE <span style='color: #1f6feb;'>●</span>
+        </p>
+    """, unsafe_allow_html=True)
     st.info(f"💵 1 USD = **{LIVE_USDTHB:.2f} THB**")
     capital = st.number_input("Total Capital (THB):", value=1000000, step=10000)
     risk_pct = st.slider("Risk per Trade (%)", 0.1, 5.0, 1.0)
@@ -143,10 +147,10 @@ for ticker in final_watchlist:
 res_df = pd.DataFrame(results)
 
 # --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🧪 Analytics", "📖 Step-by-Step Guide", "🧠 System Logic"])
+tabs = st.tabs(["🏛 Scanner", "📈 Analytics", "💼 Vault", "🧪 Backtest", "🛡️ Exposure", "📖 Guide", "🧠 Logic"])
 
 with tabs[0]:
-    st.subheader("📊 Market Opportunities")
+    st.subheader("📊 Market Intelligence")
     if not res_df.empty: st.dataframe(res_df, use_container_width=True, hide_index=True)
     else: st.warning("ระบุ Ticker ใน Sidebar เพื่อเริ่มวิเคราะห์")
 
@@ -164,13 +168,13 @@ with tabs[1]:
         st.plotly_chart(fig, use_container_width=True)
 
 with tabs[2]:
-    st.subheader("💼 Portfolio Management")
+    st.subheader("💼 Vault Management")
     with st.expander("➕ บันทึกไม้เทรด"):
         c1, c2, c3 = st.columns(3)
         p_asset = c1.selectbox("Asset", list(data_dict.keys()) if data_dict else ["None"])
         p_entry = c2.number_input("Entry Price", value=0.0)
         p_qty = c3.number_input("Quantity", value=0)
-        if st.button("Add to Portfolio") and p_asset != "None":
+        if st.button("Add to Vault") and p_asset != "None":
             st.session_state.my_portfolio[p_asset] = {"entry": p_entry, "qty": p_qty}
             save_portfolio(st.session_state.my_portfolio); st.rerun()
 
@@ -184,10 +188,10 @@ with tabs[2]:
                 pnl = (cp - info['entry']) * info['qty']
                 p_list.append({"Asset": asset, "Cost": info['entry'], "Price": cp, "Qty": info['qty'], "P/L": f"{pnl:,.2f} {curr_l}", "Status": "✅ HOLD" if cp > sl else "🚨 EXIT"})
         st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        if st.button("🗑️ Reset Portfolio"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
+        if st.button("🗑️ Reset Vault"): save_portfolio({}); st.session_state.my_portfolio = {}; st.rerun()
 
 with tabs[3]:
-    st.header("🧪 Strategy Backtest (1-Year)")
+    st.header("🧪 Strategy Simulation")
     sel_bt = st.selectbox("เลือกสินทรัพย์เพื่อทดสอบ:", list(data_dict.keys()) if data_dict else ["None"], key="bt_sel")
     if sel_bt != "None" and sel_bt in data_dict:
         df_bt = data_dict[sel_bt].iloc[-252:].copy() 
@@ -217,12 +221,12 @@ with tabs[3]:
                 c3.metric("Final Balance", f"{balance:,.2f}")
                 c4.metric("Sharpe Ratio", f"{sharpe:.2f}")
                 c5.metric("Max Drawdown", f"{max_dd:.2f}%", delta_color="inverse")
-                fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines+markers', line=dict(color='#00ff00')))
-                fig_bt.update_layout(title=f"การเติบโตของเงินต้นจากหุ้น {sel_bt}", template="plotly_dark")
+                fig_bt = go.Figure(go.Scatter(x=td_df['Date'], y=td_df['Equity'], mode='lines', line=dict(color='#1f6feb')))
+                fig_bt.update_layout(title=f"Equity Growth: {sel_bt}", template="plotly_dark")
                 st.plotly_chart(fig_bt, use_container_width=True)
 
 with tabs[4]:
-    st.subheader("🧪 Analytics & Portfolio Risk")
+    st.subheader("🛡️ Portfolio Analytics")
     col_l, col_spacer, col_r = st.columns([2, 0.2, 1])
     with col_l:
         st.markdown("##### 📉 Asset Correlation")
@@ -230,73 +234,22 @@ with tabs[4]:
         if len(price_dict) > 1:
             corr_df = pd.DataFrame(price_dict).dropna().corr()
             fig_corr = go.Figure(data=go.Heatmap(z=corr_df.values, x=corr_df.columns, y=corr_df.columns, colorscale='RdBu_r', zmin=-1, zmax=1, text=np.round(corr_df.values, 2), texttemplate="%{text}"))
-            fig_corr.update_layout(height=500, template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20))
+            fig_corr.update_layout(height=500, template="plotly_dark")
             st.plotly_chart(fig_corr, use_container_width=True)
-        else: st.info("เพิ่ม Ticker มากกว่า 1 ตัวเพื่อดูความสัมพันธ์")
     with col_r:
-        st.markdown("##### 🛡️ Portfolio Exposure")
+        st.markdown("##### 🛡️ Exposure Monitoring")
         if st.session_state.my_portfolio:
             t_risk = sum([max((info['entry'] - data_dict[a]['Trailing_SL'].iloc[-1]) * info['qty'], 0) * (LIVE_USDTHB if not a.endswith(".BK") else 1) for a, info in st.session_state.my_portfolio.items() if a in data_dict])
             risk_util = (t_risk / capital) * 100 if capital > 0 else 0
             st.metric("Total Risk", f"{t_risk:,.2f} THB")
-            st.write(f"Risk Utilization: **{risk_util:.2f}%**")
             st.progress(min(risk_util / 100, 1.0))
-            st.caption("แนะนำ: ความเสี่ยงรวมไม่ควรเกิน 5-10% ของเงินต้น")
-            st.divider()
-            st.write("🔧 **System Health**")
-            st.write("• Data Link: ✅ Active")
-            st.write(f"• FX Sync: ✅ {LIVE_USDTHB:.2f}")
+            st.write(f"Utilization: **{risk_util:.2f}%**")
 
 with tabs[5]:
-    st.header("📖 คู่มือ Step-by-Step (The Quant Methodology)")
-    st.info("💡 เน้นรักษาวินัยและการคุมความเสี่ยง (Risk Management) เป็นหลัก")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("""
-        ### 1️⃣ การเตรียมตัว (Setup)
-        * **Capital:** เงินต้นทั้งหมดที่คุณมี (บาท) เพื่อใช้เป็นฐานในการคำนวณไม้เทรด
-        * **Risk per Trade:** เปอร์เซ็นต์ที่ยอมเสียได้ต่อหนึ่งไม้ (แนะนำ 1%) ระบบจะใช้ค่านี้คำนวณจำนวนหุ้นให้สัมพันธ์กับระยะ Stop-Loss
-        
-        ### 2️⃣ การเข้าซื้อ (Entry Strategy)
-        เมื่อเห็นสถานะ **🟢 ACCUMULATE** ในหน้า Scanner:
-        * **Trend:** ราคาต้องยืนเหนือ SMA 200 (ขาขึ้นชัดเจน)
-        * **RSI:** ต่ำกว่า 45 แปลว่า "ราคาย่อตัวลงมาในรอบขาขึ้น" (ซื้อตอนย่อ ไม่ไล่ราคา)
-        * **Volume:** Ratio > 1.2 แปลว่า "เริ่มมีแรงซื้อหนาแน่นผิดปกติ" กลับเข้ามา
-        * **Action:** ซื้อตามจำนวนที่ระบบระบุใน **Target Qty**
-        """)
-    with col_g2:
-        st.markdown("""
-        ### 3️⃣ การตัดขาดทุน (Trailing Stop-Loss)
-        * **วินัย:** หากราคาหลุด **เส้นประสีแดง** ในหน้า Deep-Dive หรือระบบขึ้นไฟแดง `🚨 EXIT` ต้องขายทันที
-        * **Trailing SL:** เส้นนี้จะขยับขึ้นตามราคาหุ้นเมื่อหุ้นขึ้น (Lock กำไร) แต่จะไม่ขยับลงตามราคาหุ้นเมื่อหุ้นตก (ตัดขาดทุน)
-        
-        ### 4️⃣ การทำกำไร (Take Profit)
-        * **Distribution:** เมื่อ RSI ทะลุ 80 แปลว่าราคาเริ่มตึงตัว (Overbought) ควรแบ่งขายทำกำไร
-        """)
+    st.header("📖 Operator's Manual")
+    st.info("💡 SENTINEL: ระบบวิเคราะห์หาจุดเข้าซื้อที่ได้เปรียบ และคำนวณหน้าตักเพื่อป้องกันความเสี่ยงสูงสุด")
 
 with tabs[6]:
-    st.header("🧠 System Logic (ตรรกะเบื้องหลังและคณิตศาสตร์)")
-    arch_c1, arch_c2 = st.columns(2)
-    with arch_c1:
-        st.markdown(f"""
-        #### ⚙️ Data Engine
-        * **Live FX Sync:** ระบบดึงอัตราแลกเปลี่ยน USDTHB นาทีต่อนาที เพื่อคำนวณ 'อำนาจซื้อ' ในตลาดต่างประเทศให้แม่นยำที่สุด
-        * **Wilder's RSI:** ใช้สูตร Exponential Moving Average เพื่อลดสัญญาณหลอก (False Signals) เมื่อเทียบกับ RSI ทั่วไป
-        * **Dynamic ATR Stop:** ใช้ค่า ATR (ความผันผวนจริง) คูณด้วย 2.5 เพื่อหาจุด Stop-Loss ที่ไม่อึดอัดเกินไป
-        """)
-        st.markdown("#### 📐 สูตรคำนวณไม้เทรด (Position Sizing)")
-        st.latex(r"Qty = \frac{Capital \times Risk\%}{Price - Trailing\,SL}")
-        st.caption("สูตรนี้ช่วยให้ไม่ว่าหุ้นจะผันผวนแค่ไหน ถ้าคุณแพ้ คุณจะเสียเงินเท่าเดิมเสมอ (1% ของพอร์ต)")
-    with arch_c2:
-        st.markdown("""
-        #### 📈 Performance Analytics
-        * **Sharpe Ratio:** วัดว่ากำไรที่คุณได้ คุ้มค่าความเสี่ยงไหม (ยิ่งสูง = กำไรอย่างสม่ำเสมอ)
-        * **Max Drawdown:** บอกจุดที่เงินทุนเคยติดลบหนักที่สุดในอดีต เพื่อประเมินความเสี่ยงเชิงสถิติ
-        * **Board Lot Rounding:** ระบบจะปัดเศษหุ้นไทย (.BK) ให้เหลือหลัก 100 เสมอ เพื่อให้สามารถส่งคำสั่งซื้อในตลาด SET ได้จริง
-        """)
-        st.divider()
-        st.markdown("#### 🛡️ Trailing Stop Logic")
-        st.code("if New_SL > Old_SL: SL = New_SL else: SL = Old_SL", language='python')
-        st.caption("ตรรกะ 'กำแพงขยับได้' ที่จะยกขึ้นตามราคากำไรเท่านั้น")
-    st.divider()
-    st.caption("Master Quante | Built for Professional Statistical Trading")
+    st.header("🧠 Logic & Engineering")
+    st.latex(r"Position\,Size = \frac{Capital \times Risk\%}{Entry - Stop\,Loss}")
+    st.caption("SENTINEL | Institutional Grade Asset Protection")
