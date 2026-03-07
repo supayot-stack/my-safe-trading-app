@@ -9,7 +9,7 @@ import os
 import shutil
 
 # --- 1. PRO UI CONFIG ---
-st.set_page_config(page_title="The Masterpiece | Quant Terminal", layout="wide")
+st.set_page_config(page_title="The Masterpiece", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #e1e4e8; }
@@ -80,26 +80,23 @@ def fetch_all_data(tickers):
                 df = raw_data.xs(t, axis=1, level=1).copy() if isinstance(raw_data.columns, pd.MultiIndex) else raw_data.copy()
                 if df.empty or len(df) < 30: continue
                 
-                # Trend & Momentum Indicators
+                # Indicators
                 df['SMA200'] = df['Close'].rolling(200, min_periods=1).mean()
                 df['SMA50'] = df['Close'].rolling(50, min_periods=1).mean()
-                
                 delta = df['Close'].diff()
                 gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
                 df['RSI'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
                 
-                # Volatility & Dynamic Trailing Stop
+                # Volatility & Trailing SL
                 tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
                 df['ATR'] = tr.rolling(14, min_periods=1).mean()
-                
                 sl_raw = df['Close'] - (df['ATR'] * 2.5)
                 tsl = np.zeros(len(df)); tsl[0] = sl_raw.iloc[0]
                 for i in range(1, len(df)):
                     tsl[i] = max(tsl[i-1], sl_raw.iloc[i]) if df['Close'].iloc[i-1] > tsl[i-1] else sl_raw.iloc[i]
                 df['Trailing_SL'] = tsl
                 
-                # Volume & Liquidity Confirmation
                 df['Vol_Avg20'] = df['Volume'].rolling(20, min_periods=1).mean()
                 df['Vol_Ratio'] = df['Volume'] / df['Vol_Avg20'].replace(0, np.nan)
                 processed[t] = df.ffill().bfill()
@@ -144,8 +141,8 @@ for t in final_watchlist:
     qty = int((capital * (risk_pct/100) / fx) / sl_gap) if fx > 1 else int(((capital * (risk_pct/100) / fx) / sl_gap) // 100) * 100
     results.append({"Asset": t, "Price": round(p, 2), "Regime": sig, "RSI": round(curr['RSI'], 1), "Target Qty": qty, "Currency": "USD" if fx > 1 else "THB"})
 
-# --- 6. MAIN TERMINAL ---
-tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Advanced Analytics", "📖 Logic Guide"])
+# --- 6. MAIN DISPLAY ---
+tabs = st.tabs(["🏛 Scanner", "📈 Deep-Dive", "💼 Portfolio", "🧪 Backtest", "🛡️ Analytics", "📖 Logic Guide"])
 
 with tabs[0]:
     st.subheader("📊 Tactical Opportunities")
@@ -212,8 +209,9 @@ with tabs[4]:
             for s in sims: fig_mc.add_trace(go.Scatter(y=s, mode='lines', line=dict(width=1), opacity=0.2, showlegend=False))
             fig_mc.update_layout(height=480, margin=dict(l=0,r=0,b=0,t=20), template="plotly_dark")
             st.plotly_chart(fig_mc, use_container_width=True)
+            
         with col_stat:
-            st.subheader("📊 Key KPIs")
+            st.subheader("📊 Performance KPIs")
             st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
             win_r = (len(td_df[td_df['PnL'] > 0]) / len(td_df)) * 100
             pf = td_df[td_df['PnL']>0]['PnL'].sum() / abs(td_df[td_df['PnL']<0]['PnL'].sum()) if any(td_df['PnL'] < 0) else 0
@@ -231,20 +229,20 @@ with tabs[5]:
     with col_l1:
         st.markdown("""
         ### 🛡️ Core Entry Framework
-        1. **Trend Guard:** ราคาสินทรัพย์ต้องอยู่เหนือ `SMA 200` (ระยะยาว) และ `SMA 50` (ระยะกลาง) เท่านั้น เพื่อกรองให้เล่นเฉพาะในสภาวะ Bullish Market
-        2. **Momentum Pullback:** ใช้ `RSI (14)` ในการหาจังหวะย่อตัว โดยเงื่อนไขคือ RSI ก่อนหน้าต้องต่ำกว่า 48 และเริ่มมีการวกกลับขึ้น (Mean Reversion setup)
-        3. **Liquidity Filter:** `Volume Ratio` ต้อง > 1.1 (ปริมาณการซื้อขายสูงกว่าค่าเฉลี่ย 20 วัน) เพื่อยืนยันว่าการขยับของราคามีแรงส่งจริง ไม่ใช่ Fake out
+        1. **Trend Guard:** ราคาสินทรัพย์ต้องอยู่เหนือ `SMA 200` และ `SMA 50` เท่านั้น เพื่อยืนยันว่าเป็นสภาวะขาขึ้นที่แข็งแกร่ง (Institutional Trend)
+        2. **Momentum Pullback:** ใช้ `RSI (14)` หาจังหวะที่ราคาย่อตัวลงมาในโซนได้เปรียบ โดยเงื่อนไขคือ RSI ต้องเคยต่ำกว่า 48 แล้วเริ่มมีการฟื้นตัวขึ้น
+        3. **Liquidity Filter:** `Volume Ratio` ต้อง > 1.1 เพื่อยืนยันว่าการขยับของราคามีปริมาณการซื้อขายสนับสนุน ไม่ใช่การปั่นราคาในสภาวะที่ขาดสภาพคล่อง
         """)
     
     with col_l2:
         st.markdown("""
         ### 🚪 Professional Exit Strategy
-        1. **Dynamic Trailing Stop:** ใช้ `ATR * 2.5` เป็นระยะ Stop Loss ที่ขยับตามความผันผวน หากราคาวิ่งขึ้น SL จะขยับขึ้นตามและ **ไม่มีการขยับลง** เพื่อ Lock กำไร
-        2. **Overbought Exit:** หาก `RSI > 82` ระบบจะแนะนำให้ Take Profit ทันที เพราะถือว่าเป็นจุดที่ตึงตัวเกินไป (Extremely Overextended)
+        1. **Dynamic Trailing Stop:** ปกป้องกำไรด้วย `ATR * 2.5` ซึ่งเป็นระบบ Stop Loss ที่ขยับตามความผันผวนจริง หากราคาวิ่งขึ้น จุด Stop จะขยับขึ้นตามเพื่อ Lock กำไรและจะไม่ขยับลงเด็ดขาด
+        2. **Overbought Exit:** เมื่อราคาพุ่งทะยานจน `RSI > 82` ระบบจะแนะนำให้ Take Profit เนื่องจากสถิติระบุว่าเป็นจุดที่ราคามีความตึงตัวสูง (Extremely Overextended)
         """)
 
     st.divider()
     st.latex(r"Position\,Size = \frac{Equity \times Risk\%}{Price - Trailing\,Stop}")
-    st.info("💡 **Quant Tip:** การคำนวณจำนวนหุ้นโดยอิงจาก Risk-per-trade ช่วยให้พอร์ตไม่พังเมื่อเจอช่วง Drawdown")
+    st.info("💡 **Quant Wisdom:** การรักษาเงินต้น (Capital Preservation) สำคัญกว่าการหากำไรมหาศาลเสมอ")
 
-st.divider(); st.caption("🏆 The Masterpiece Terminal | Professional Systematic Trading OS")
+st.divider(); st.caption("🏆 The Masterpiece | Institutional Systematic OS")
